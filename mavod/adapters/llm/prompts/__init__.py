@@ -1,8 +1,8 @@
-"""Prompts DeepSeek externalisés (versionnés, traçables).
+"""Prompts LLM externalisés (versionnés, traçables).
 
 Charger via `load_intent_prompt()` / `load_ranker_prompt()`. Le hash SHA1 du
 prompt est exposé via `prompt_hash()` pour permettre au logging de tracker
-les régressions de cache hit DeepSeek (le caching dépend du prefix exact).
+les régressions de cache hit (le prompt-caching dépend du prefix exact).
 """
 
 from __future__ import annotations
@@ -26,7 +26,7 @@ def load_intent_prompt() -> str:
 
 
 def load_ranker_prompt() -> str:
-    """Prompt système pour le ranker DeepSeek (v2)."""
+    """Prompt système pour le ranker (v2)."""
     return _load("ranker_v2.md")
 
 

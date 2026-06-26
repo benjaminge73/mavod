@@ -1,7 +1,7 @@
 """Décorateur retry unifié pour les appels réseau.
 
-Remplace la duplication chat/chat_with_tools du DeepSeekClient + la
-gestion ad-hoc dans Prowlarr/C411. Honore `Retry-After` (HTTP date OU
+Remplace la duplication chat/chat_with_tools du client LLM + la
+gestion ad-hoc dans Prowlarr. Honore `Retry-After` (HTTP date OU
 secondes), backoff exponentiel avec cap.
 """
 

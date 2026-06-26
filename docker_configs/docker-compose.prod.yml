@@ -19,7 +19,7 @@ services:
     networks:
       - mavod_network
     healthcheck:
-      test: ["CMD", "python", "-c", "import httpx; httpx.get('https://api.deepseek.com', timeout=5)"]
+      test: ["CMD", "python", "-c", "import mavod"]
       interval: 60s
       timeout: 10s
       retries: 3

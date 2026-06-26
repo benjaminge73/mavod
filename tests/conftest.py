@@ -38,15 +38,12 @@ def load_env():
 
 _TEST_ENV = {
     "TELEGRAM_BOT_TOKEN": "tg",
-    "DEEPSEEK_API_KEY": "sk-test",
+    "LLM_API_KEY": "sk-test",
     "QB_URL": "http://qb",
     "QB_USER": "u",
     "QB_PASS": "p",
     "PROWLARR_URL": "http://prowlarr",
     "PROWLARR_API_KEY": "pk",
-    "C411_URL_API": "http://c411",
-    "C411_API_KEY": "ck",
-    "C411_PASSKEY": "pk",
 }
 
 
@@ -63,14 +60,14 @@ def test_settings(test_env):
     return load_settings(env=test_env)
 
 
-# ─── Mock DeepSeek (legacy, compatibilité) ───────────────────────────────────
+# ─── Mock LLM (legacy, compatibilité) ────────────────────────────────────────
 
 
 @pytest.fixture
-def mock_deepseek():
-    """MagicMock d'un DeepSeekClient. Retourne un intent JSON valide par défaut.
+def mock_llm():
+    """MagicMock d'un client LLM. Retourne un intent JSON valide par défaut.
 
-    DEPRECATED — préférer `deepseek_intent_response` / `deepseek_ranking_response`
+    DEPRECATED — préférer `llm_intent_response` / `llm_ranking_response`
     qui retournent des objets `httpx.Response` directement utilisables avec respx.
     """
     client = MagicMock()
@@ -82,11 +79,11 @@ def mock_deepseek():
 
 
 @pytest.fixture
-def deepseek_intent_response():
-    """Fabrique de réponses DeepSeek pour les tool_calls intent.
+def llm_intent_response():
+    """Fabrique de réponses LLM pour les tool_calls intent.
 
     Usage :
-        respx.post(...).mock(return_value=deepseek_intent_response(
+        respx.post(...).mock(return_value=llm_intent_response(
             tool="submit_intent",
             args='{"title": "Dune", "type": "movie", "year": 2021}'
         ))
@@ -111,12 +108,12 @@ def deepseek_intent_response():
 
 
 @pytest.fixture
-def deepseek_ranking_response():
-    """Fabrique de réponses DeepSeek pour le ranker.
+def llm_ranking_response():
+    """Fabrique de réponses LLM pour le ranker.
 
     Usage :
-        respx.post(...).mock(return_value=deepseek_ranking_response(best=2))
-        respx.post(...).mock(return_value=deepseek_ranking_response(content="custom text"))
+        respx.post(...).mock(return_value=llm_ranking_response(best=2))
+        respx.post(...).mock(return_value=llm_ranking_response(content="custom text"))
     """
     def _make(*, best: int = None, ranking: str = None, content: str = None,
               reasoning: str = "thinking", usage: dict = None):
@@ -152,21 +149,5 @@ def prowlarr_search_payload():
             "guid": "g1",
             "categories": [2000],
             "is_magnet": True,
-        },
-    ]
-
-
-@pytest.fixture
-def c411_search_payload():
-    """Échantillon minimal de réponse normalisée C411 (liste de dicts)."""
-    return [
-        {
-            "title": "The.Bear.S03.MULTI.1080p.WEB-DL.x265-BAR",
-            "indexer": "C411",
-            "size": 5 * 1024 ** 3,
-            "seeders": 10,
-            "downloadUrl": "magnet:?xt=urn:btih:" + "b" * 40,
-            "infoHash": "b" * 40,
-            "_c411_id": 12345,
         },
     ]

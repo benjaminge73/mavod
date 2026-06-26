@@ -45,7 +45,7 @@ def _sample_payload(search_id: str = "20250101_120000_Dune") -> dict:
             {"id": 2, "name": "Dune.2021.2160p.DV", "size_gb": 25.0, "num_files": 1,
              "seeders": 40, "indexer": "Prowlarr:YGG", "path": "/tmp/b.torrent"},
             {"id": 3, "name": "Dune.2021.720p.DTS", "size_gb": 0, "num_files": 1,
-             "seeders": 2, "indexer": "C411", "path": None},
+             "seeders": 2, "indexer": "Prowlarr", "path": None},
         ],
         "llm_choice_id": 2,
         "llm_choice_name": "Dune.2021.2160p.DV",
@@ -112,7 +112,7 @@ def test_result_to_ui_dict_carries_reasoning(tmp_path):
 
 @pytest.mark.unit
 def test_result_to_ui_dict_exposes_reasoning_content(tmp_path):
-    """Expose le reasoning_content de DeepSeek."""
+    """Expose le reasoning_content de LLM."""
     data = _load_data_module(tmp_path)
     ui_dict = data._result_to_ui_dict(_sample_payload())
     assert "chain-of-thought" in ui_dict["llm_choice"]["reasoning_content"]

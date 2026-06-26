@@ -1,4 +1,4 @@
-"""Tests de mavod.adapters.deepseek.client — mocks via respx."""
+"""Tests de mavod.adapters.llm.client — mocks via respx."""
 
 from __future__ import annotations
 
@@ -6,29 +6,26 @@ import httpx
 import pytest
 import respx
 
-from mavod.adapters.deepseek import DeepSeekAdapter
-from mavod.adapters.deepseek.prompts import (
+from mavod.adapters.llm import LLMAdapter
+from mavod.adapters.llm.prompts import (
     load_intent_prompt,
     load_ranker_prompt,
     prompt_hash,
 )
 from mavod.config import Settings, load_settings
-from mavod.exceptions import DeepSeekError, DeepSeekMalformed
+from mavod.exceptions import LLMError, LLMMalformed
 
 pytestmark = pytest.mark.unit
 
 
 _ENV = {
     "TELEGRAM_BOT_TOKEN": "tg",
-    "DEEPSEEK_API_KEY": "sk-test",
+    "LLM_API_KEY": "sk-test",
     "QB_URL": "http://qb",
     "QB_USER": "u",
     "QB_PASS": "p",
     "PROWLARR_URL": "http://prowlarr",
     "PROWLARR_API_KEY": "pk",
-    "C411_URL_API": "http://c411",
-    "C411_API_KEY": "ck",
-    "C411_PASSKEY": "pk",
 }
 
 
@@ -66,7 +63,7 @@ class TestPrompts:
 
 # ─── Client ──────────────────────────────────────────────────────────────────
 
-class TestDeepSeekAdapter:
+class TestLLMAdapter:
     @respx.mock
     def test_chat_success(self, settings):
         """Un appel chat réussi retourne le contenu."""
@@ -79,7 +76,7 @@ class TestDeepSeekAdapter:
                 },
             )
         )
-        adapter = DeepSeekAdapter(settings)
+        adapter = LLMAdapter(settings)
         assert adapter.chat(system="sys", user="user") == "hello world"
 
     @respx.mock
@@ -103,7 +100,7 @@ class TestDeepSeekAdapter:
                 },
             )
         )
-        adapter = DeepSeekAdapter(settings)
+        adapter = LLMAdapter(settings)
         content, reasoning, usage = adapter.chat_with_usage(system="s", user="u")
         assert content == "answer"
         assert reasoning == "thinking…"
@@ -131,7 +128,7 @@ class TestDeepSeekAdapter:
                 },
             )
         )
-        adapter = DeepSeekAdapter(settings)
+        adapter = LLMAdapter(settings)
         result = adapter.chat_with_tools(
             messages=[{"role": "user", "content": "Dune"}],
             tools=[{"type": "function", "function": {"name": "submit_intent"}}],
@@ -148,8 +145,8 @@ class TestDeepSeekAdapter:
                 json={"choices": [{"message": {"content": "no tool"}}]},
             )
         )
-        adapter = DeepSeekAdapter(settings)
-        with pytest.raises(DeepSeekMalformed):
+        adapter = LLMAdapter(settings)
+        with pytest.raises(LLMMalformed):
             adapter.chat_with_tools(messages=[{"role": "user", "content": "x"}], tools=[])
 
     @respx.mock
@@ -158,15 +155,15 @@ class TestDeepSeekAdapter:
         respx.post("https://api.deepseek.com/v1/chat/completions").mock(
             return_value=httpx.Response(400, text="bad request")
         )
-        adapter = DeepSeekAdapter(settings)
-        with pytest.raises(DeepSeekError):
+        adapter = LLMAdapter(settings)
+        with pytest.raises(LLMError):
             adapter.chat(system="s", user="u")
 
     @respx.mock
     def test_429_retries_then_succeeds(self, settings, monkeypatch):
         """Un HTTP 429 déclenche un retry puis réussit."""
         # Avoid real sleeping
-        from mavod.adapters.deepseek import client as client_mod
+        from mavod.adapters.llm import client as client_mod
         monkeypatch.setattr(client_mod, "_sleep", lambda s: None)
 
         route = respx.post("https://api.deepseek.com/v1/chat/completions")
@@ -174,10 +171,10 @@ class TestDeepSeekAdapter:
             httpx.Response(429, headers={"Retry-After": "0"}, text="rate limit"),
             httpx.Response(200, json={"choices": [{"message": {"content": "ok"}}]}),
         ]
-        adapter = DeepSeekAdapter(settings)
+        adapter = LLMAdapter(settings)
         assert adapter.chat(system="s", user="u") == "ok"
 
     def test_context_manager_closes(self, settings):
         """Le context manager ferme bien le client."""
-        with DeepSeekAdapter(settings) as adapter:
-            assert adapter.model == settings.deepseek_model
+        with LLMAdapter(settings) as adapter:
+            assert adapter.model == settings.llm_model

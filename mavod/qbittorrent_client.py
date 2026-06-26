@@ -248,7 +248,7 @@ class QBittorrentClient:
         """
         if is_magnet:
             import re as _re, base64
-            # Hex (40 chars) — format standard C411
+            # Hex (40 chars) — format standard BitTorrent v1
             match = _re.search(r"xt=urn:btih:([0-9a-fA-F]{40})", torrent_source, _re.IGNORECASE)
             if match:
                 return match.group(1).lower()

@@ -1,4 +1,4 @@
-"""Tests des clients de recherche série (Prowlarr/C411) — `search` mockée."""
+"""Tests des clients de recherche série (Prowlarr) — `search` mockée."""
 
 from __future__ import annotations
 
@@ -6,7 +6,6 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from torrents_search_download.c411_api_client import C411APIClient
 from torrents_search_download.prowlarr_client import ProwlarrClient, _merge_dedup
 
 pytestmark = pytest.mark.unit
@@ -59,26 +58,3 @@ class TestProwlarrSeries:
         c = self._client()
         c.search_series("Widows Bay", season=1, episode=1, imdb_id="tt1234567")
         c.search.assert_called_once_with("Widows Bay", categories=[5000], imdb_id="tt1234567")
-
-
-class TestC411Series:
-    def _client(self) -> C411APIClient:
-        c = C411APIClient(api_key="k", api_url="http://c411/api", passkey="p")
-        c.search = MagicMock(return_value=[])
-        return c
-
-    def test_season_aware_query_first(self):
-        """Saison fournie → requête 'Title S{NN}' d'abord."""
-        c = self._client()
-        c.search.return_value = [_r("Widows.Bay.S01")]
-        c.search_series("Widows Bay", season=1)
-        assert c.search.call_args.args[0] == "Widows Bay S01"
-
-    def test_falls_back_to_title_only_when_empty(self):
-        """Requête saison vide → fallback titre seul."""
-        c = self._client()
-        c.search.side_effect = [[], [_r("Widows.Bay")]]
-        out = c.search_series("Widows Bay", season=1)
-        queries = [call.args[0] for call in c.search.call_args_list]
-        assert queries == ["Widows Bay S01", "Widows Bay"]
-        assert len(out) == 1

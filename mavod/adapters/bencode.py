@@ -3,7 +3,7 @@
 Extrait depuis `mavod/qbittorrent_client.py::parse_torrent_files`. Pas de
 dépendance qBittorrent : purement offline. Couvre 90 % du pipeline car
 Prowlarr livre des `.torrent` bytes (le probe qBittorrent reste un
-fallback pour les magnets purs C411 quand DHT est dispo).
+fallback pour les magnets purs quand DHT est dispo).
 """
 
 from __future__ import annotations

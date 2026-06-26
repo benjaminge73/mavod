@@ -3,10 +3,10 @@
 Exécution :
     RUN_E2E=1 pytest -m e2e -v
 
-Ces tests appellent réellement DeepSeek + Prowlarr + C411 (mais skip_qb=True
+Ces tests appellent réellement le LLM + Prowlarr (mais skip_qb=True
 pour ne pas pousser le torrent vers le qBittorrent distant).
 
-Coût estimé : ~$0.01 / run DeepSeek. Durée : ~30-60s par test.
+Coût estimé : ~$0.01 / run LLM. Durée : ~30-60s par test.
 """
 
 from __future__ import annotations

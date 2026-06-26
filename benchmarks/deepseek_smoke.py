@@ -6,7 +6,7 @@ modèle, et compare qualité / latence / tokens / coût. But : décider si `flas
 tient la parité avec `pro` et permet de réduire les coûts.
 
 Usage :
-    DEEPSEEK_API_KEY=sk-... python benchmarks/deepseek_smoke.py
+    LLM_API_KEY=sk-... python benchmarks/deepseek_smoke.py
     python benchmarks/deepseek_smoke.py --dry-run            # valide le câblage, 0 appel
     python benchmarks/deepseek_smoke.py --models deepseek-v4-flash --suite rank
 """
@@ -32,7 +32,7 @@ from mavod.config import Settings  # noqa: E402
 from mavod.domain import Intent, Torrent, TorrentFile  # noqa: E402
 from mavod.exceptions import MavodError  # noqa: E402
 from mavod.services.intent_service import IntentService, IntentTurnResult  # noqa: E402
-from mavod.services.ranking_service import DeepSeekRankingStrategy  # noqa: E402
+from mavod.services.ranking_service import LLMRankingStrategy  # noqa: E402
 
 
 # ─── Tarifs (À REMPLIR) ──────────────────────────────────────────────────────
@@ -298,11 +298,10 @@ class CaseResult:
 def _make_settings(api_key: str, model: str, base_url: str, timeout: float) -> Settings:
     """Settings minimal pour le benchmark (champs requis non-LLM = factices)."""
     return Settings(
-        telegram_bot_token="x", deepseek_api_key=api_key,
+        telegram_bot_token="x", llm_api_key=api_key,
         qb_url="x", qb_user="x", qb_pass="x",
         prowlarr_url="x", prowlarr_api_key="x",
-        c411_url_api="x", c411_api_key="x", c411_passkey="x",
-        deepseek_model=model, deepseek_base_url=base_url, deepseek_timeout=timeout,
+        llm_model=model, llm_base_url=base_url, llm_timeout=timeout,
     )
 
 
@@ -333,7 +332,7 @@ def run_intent_suite(settings: Settings, cases: List[IntentCase]) -> List[CaseRe
 
 
 def run_rank_suite(settings: Settings, cases: List[RankCase]) -> List[CaseResult]:
-    strat = DeepSeekRankingStrategy(settings)
+    strat = LLMRankingStrategy(settings)
     out: List[CaseResult] = []
     for c in cases:
         t0 = time.perf_counter()
@@ -432,7 +431,7 @@ def _print_comparison(summaries: List[Dict[str, Any]]) -> None:
 
 def _dry_run() -> None:
     """Valide le câblage sans appel réseau : affiche prompts et payloads."""
-    from mavod.adapters.deepseek.prompts import (load_intent_prompt, load_ranker_prompt, prompt_hash)
+    from mavod.adapters.llm.prompts import (load_intent_prompt, load_ranker_prompt, prompt_hash)
     intent_p, ranker_p = load_intent_prompt(), load_ranker_prompt()
     print("DRY-RUN — aucun appel API.\n")
     print(f"intent prompt  : hash={prompt_hash(intent_p)} ({len(intent_p)} chars)")
@@ -444,7 +443,7 @@ def _dry_run() -> None:
 
     # Reconstruit le message utilisateur exact que le ranker enverrait.
     settings = _make_settings("dry", "deepseek-v4-flash", "https://api.deepseek.com", 60.0)
-    strat = DeepSeekRankingStrategy.__new__(DeepSeekRankingStrategy)
+    strat = LLMRankingStrategy.__new__(LLMRankingStrategy)
     strat._settings = settings
     print(f"\nRANK — {len(RANK_CASES)} cas :")
     for c in RANK_CASES:
@@ -459,7 +458,7 @@ def main() -> int:
     ap.add_argument("--models", default=",".join(DEFAULT_MODELS),
                     help="CSV de modèles (défaut: pro,flash)")
     ap.add_argument("--suite", choices=("intent", "rank", "all"), default="all")
-    ap.add_argument("--base-url", default=os.environ.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com"))
+    ap.add_argument("--base-url", default=os.environ.get("LLM_BASE_URL", "https://api.deepseek.com"))
     ap.add_argument("--timeout", type=float, default=120.0)
     ap.add_argument("--dry-run", action="store_true", help="valide le câblage, 0 appel API")
     ap.add_argument("--json", dest="json_out", default=None, help="dump JSON des résultats")
@@ -469,9 +468,9 @@ def main() -> int:
         _dry_run()
         return 0
 
-    api_key = os.environ.get("DEEPSEEK_API_KEY")
+    api_key = os.environ.get("LLM_API_KEY")
     if not api_key:
-        print("ERREUR: DEEPSEEK_API_KEY absent de l'environnement.", file=sys.stderr)
+        print("ERREUR: LLM_API_KEY absent de l'environnement.", file=sys.stderr)
         return 2
 
     models = [m.strip() for m in args.models.split(",") if m.strip()]

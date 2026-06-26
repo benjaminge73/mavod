@@ -21,7 +21,7 @@ class TorrentFile:
 
 @dataclass(frozen=True, slots=True)
 class Torrent:
-    """Candidat torrent normalisé (Prowlarr ou C411).
+    """Candidat torrent normalisé (Prowlarr).
 
     Tous les services en aval (filter, ranker, qBittorrent submit)
     consomment des Torrent et non plus des dict bruts.

@@ -10,7 +10,7 @@ from mavod.config import load_settings
 from mavod.domain import Intent, Torrent
 from mavod.exceptions import RankingError
 from mavod.services.ranking_service import (
-    DeepSeekRankingStrategy,
+    LLMRankingStrategy,
     _enrich_files_from_bytes,
     _legacy_dict_to_torrent,
     _torrent_to_legacy_dict,
@@ -21,15 +21,12 @@ pytestmark = pytest.mark.unit
 
 _ENV = {
     "TELEGRAM_BOT_TOKEN": "tg",
-    "DEEPSEEK_API_KEY": "sk",
+    "LLM_API_KEY": "sk",
     "QB_URL": "http://qb",
     "QB_USER": "u",
     "QB_PASS": "p",
     "PROWLARR_URL": "http://prowlarr",
     "PROWLARR_API_KEY": "pk",
-    "C411_URL_API": "http://c411",
-    "C411_API_KEY": "ck",
-    "C411_PASSKEY": "pk",
 }
 
 
@@ -59,14 +56,14 @@ def _ranker_response(best: int, ranking: str = None):
     )
 
 
-class TestDeepSeekRankingStrategy:
+class TestLLMRankingStrategy:
     @respx.mock
     def test_picks_best_choice(self, settings):
-        """Sélectionne le meilleur torrent depuis la réponse DeepSeek."""
+        """Sélectionne le meilleur torrent depuis la réponse LLM."""
         respx.post("https://api.deepseek.com/v1/chat/completions").mock(
             return_value=_ranker_response(best=2)
         )
-        strat = DeepSeekRankingStrategy(settings)
+        strat = LLMRankingStrategy(settings)
         candidates = [_t(1), _t(2), _t(3)]
         decision = strat.rank(
             Intent(title="Dune", type="movie", year=2021),
@@ -80,7 +77,7 @@ class TestDeepSeekRankingStrategy:
     @respx.mock
     def test_empty_candidates_returns_no_choice(self, settings):
         """Retourne aucun choix si la liste de candidats est vide."""
-        strat = DeepSeekRankingStrategy(settings)
+        strat = LLMRankingStrategy(settings)
         decision = strat.rank(Intent(title="X", type="movie"), [])
         assert not decision.has_choice
         assert decision.ranked == ()
@@ -96,7 +93,7 @@ class TestDeepSeekRankingStrategy:
             return _ranker_response(best=1)
 
         respx.post("https://api.deepseek.com/v1/chat/completions").mock(side_effect=cap)
-        strat = DeepSeekRankingStrategy(settings)
+        strat = LLMRankingStrategy(settings)
         intent = Intent(title="The Bear", type="serie", season=3, episode=4, year=2024)
         strat.rank(intent, [_t(1)])
         user_msg = captured["body"]["messages"][1]["content"]
@@ -113,7 +110,7 @@ class TestDeepSeekRankingStrategy:
             return _ranker_response(best=1)
 
         respx.post("https://api.deepseek.com/v1/chat/completions").mock(side_effect=cap)
-        strat = DeepSeekRankingStrategy(settings)
+        strat = LLMRankingStrategy(settings)
         intent = Intent(title="Widows Bay", type="serie", season=1, year=2024)
         strat.rank(intent, [_t(1)])
         user_msg = captured["body"]["messages"][1]["content"]
@@ -130,27 +127,27 @@ class TestDeepSeekRankingStrategy:
                 json={"choices": [{"message": {"content": "no marker here"}}]},
             )
         )
-        strat = DeepSeekRankingStrategy(settings)
+        strat = LLMRankingStrategy(settings)
         decision = strat.rank(Intent(title="X", type="movie"), [_t(1)])
         assert decision.best is None
 
     @respx.mock
-    def test_deepseek_error_wrapped(self, settings):
-        """Les erreurs DeepSeek sont enveloppées proprement."""
+    def test_llm_error_wrapped(self, settings):
+        """Les erreurs LLM sont enveloppées proprement."""
         respx.post("https://api.deepseek.com/v1/chat/completions").mock(
             return_value=httpx.Response(400, text="bad request")
         )
-        strat = DeepSeekRankingStrategy(settings)
+        strat = LLMRankingStrategy(settings)
         with pytest.raises(RankingError):
             strat.rank(Intent(title="X", type="movie"), [_t(1)])
 
     @respx.mock
     def test_best_choice_out_of_range_returns_none(self, settings):
-        """Si DeepSeek renvoie Torrent 99 mais on n'a que 3 candidats → pas de best."""
+        """Si LLM renvoie Torrent 99 mais on n'a que 3 candidats → pas de best."""
         respx.post("https://api.deepseek.com/v1/chat/completions").mock(
             return_value=_ranker_response(best=99)
         )
-        strat = DeepSeekRankingStrategy(settings)
+        strat = LLMRankingStrategy(settings)
         decision = strat.rank(
             Intent(title="X", type="movie"),
             [_t(1), _t(2), _t(3)],
@@ -163,7 +160,7 @@ class TestDeepSeekRankingStrategy:
         respx.post("https://api.deepseek.com/v1/chat/completions").mock(
             return_value=_ranker_response(best=0)
         )
-        strat = DeepSeekRankingStrategy(settings)
+        strat = LLMRankingStrategy(settings)
         decision = strat.rank(Intent(title="X", type="movie"), [_t(1), _t(2)])
         assert decision.best is None
 
@@ -175,7 +172,7 @@ class TestDeepSeekRankingStrategy:
                 200, json={"choices": [{"message": {"content": ""}}]}
             )
         )
-        strat = DeepSeekRankingStrategy(settings)
+        strat = LLMRankingStrategy(settings)
         candidates = [_t(1), _t(2)]
         decision = strat.rank(Intent(title="X", type="movie"), candidates)
         assert decision.best is None
@@ -191,7 +188,7 @@ class TestDeepSeekRankingStrategy:
                 200, json={"choices": [{"message": {"content": text}}]}
             )
         )
-        strat = DeepSeekRankingStrategy(settings)
+        strat = LLMRankingStrategy(settings)
         candidates = [_t(1), _t(2)]
         decision = strat.rank(Intent(title="X", type="movie"), candidates)
         assert len(decision.ranked) == 2
@@ -207,7 +204,7 @@ class TestDeepSeekRankingStrategy:
                 200, json={"choices": [{"message": {"content": text}}]}
             )
         )
-        strat = DeepSeekRankingStrategy(settings)
+        strat = LLMRankingStrategy(settings)
         candidates = [_t(1), _t(2)]
         decision = strat.rank(Intent(title="X", type="movie"), candidates)
         assert [c.title for c in decision.ranked] == [candidates[0].title, candidates[1].title]

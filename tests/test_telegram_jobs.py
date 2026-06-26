@@ -16,15 +16,12 @@ pytestmark = pytest.mark.unit
 
 _ENV = {
     "TELEGRAM_BOT_TOKEN": "tg",
-    "DEEPSEEK_API_KEY": "sk",
+    "LLM_API_KEY": "sk",
     "QB_URL": "http://qb",
     "QB_USER": "u",
     "QB_PASS": "p",
     "PROWLARR_URL": "http://prowlarr",
     "PROWLARR_API_KEY": "pk",
-    "C411_URL_API": "http://c411",
-    "C411_API_KEY": "ck",
-    "C411_PASSKEY": "pk",
 }
 
 

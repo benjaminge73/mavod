@@ -1,6 +1,6 @@
 """Smoke tests du bot Telegram V2 (mavod.telegram.bot).
 
-Tests strictement structurels — pas d'I/O réseau (PTB et DeepSeek mockés).
+Tests strictement structurels — pas d'I/O réseau (PTB et LLM mockés).
 """
 
 from __future__ import annotations
@@ -27,15 +27,12 @@ pytestmark = pytest.mark.unit
 
 _ENV = {
     "TELEGRAM_BOT_TOKEN": "tg",
-    "DEEPSEEK_API_KEY": "sk",
+    "LLM_API_KEY": "sk",
     "QB_URL": "http://qb",
     "QB_USER": "u",
     "QB_PASS": "p",
     "PROWLARR_URL": "http://prowlarr",
     "PROWLARR_API_KEY": "pk",
-    "C411_URL_API": "http://c411",
-    "C411_API_KEY": "ck",
-    "C411_PASSKEY": "pk",
     "TELEGRAM_ALLOWED_USERS": "42",
 }
 

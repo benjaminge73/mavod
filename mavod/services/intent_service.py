@@ -1,6 +1,6 @@
 """Service de parsing d'intent.
 
-Remplace `mavod/intent_parser.py` à terme. Consomme `DeepSeekAdapter` +
+Remplace `mavod/intent_parser.py` à terme. Consomme `LLMAdapter` +
 `Settings` + prompts externalisés. Renvoie un `IntentResult`
 (`Intent | ClarificationRequest`) typé.
 """
@@ -10,12 +10,12 @@ from __future__ import annotations
 import json
 from typing import Any, Dict, List, Sequence
 
-from mavod.adapters.deepseek import DeepSeekAdapter
-from mavod.adapters.deepseek.prompts import load_intent_prompt, prompt_hash
+from mavod.adapters.llm import LLMAdapter
+from mavod.adapters.llm.prompts import load_intent_prompt, prompt_hash
 from mavod.config import Settings
 from mavod.domain import ClarificationRequest, Intent, IntentResult
 from mavod.exceptions import (
-    DeepSeekError,
+    LLMError,
     IntentParseError,
     IntentValidationError,
 )
@@ -79,9 +79,9 @@ INTENT_TOOLS: Sequence[Dict[str, Any]] = (SUBMIT_INTENT_TOOL, ASK_CLARIFICATION_
 class IntentService:
     """Multi-turn function-calling parser (avec gestion clarifications)."""
 
-    def __init__(self, settings: Settings, *, adapter: DeepSeekAdapter = None):
+    def __init__(self, settings: Settings, *, adapter: LLMAdapter = None):
         self._settings = settings
-        self._adapter = adapter or DeepSeekAdapter(settings)
+        self._adapter = adapter or LLMAdapter(settings)
         self._system_prompt = load_intent_prompt()
         log.info("intent.service.init", extra={
             "model": self._adapter.model,
@@ -110,10 +110,10 @@ class IntentService:
                 tools=list(INTENT_TOOLS),
                 tool_choice="auto",
                 temperature=0.0,
-                max_tokens=self._settings.deepseek_intent_max_tokens,
+                max_tokens=self._settings.llm_intent_max_tokens,
             )
-        except DeepSeekError as e:
-            raise IntentParseError(f"DeepSeek error: {e}") from e
+        except LLMError as e:
+            raise IntentParseError(f"LLM error: {e}") from e
 
         tool = response["tool_name"]
         args = response["arguments"]

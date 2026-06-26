@@ -6,7 +6,7 @@ Chaque service consomme des `adapters/` et renvoie/manipule des
 
 from mavod.services.intent_service import IntentService
 from mavod.services.ranking_service import (
-    DeepSeekRankingStrategy,
+    LLMRankingStrategy,
     RankingService,
 )
 from mavod.services.search_service import SearchService
@@ -17,7 +17,7 @@ from mavod.services.workflow_service import (
 )
 
 __all__ = [
-    "DeepSeekRankingStrategy",
+    "LLMRankingStrategy",
     "IntentService",
     "RankingService",
     "SearchService",

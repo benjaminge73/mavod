@@ -18,18 +18,18 @@ qBittorrent instance, and notifies you when it's ready.
 Telegram message
    │
    ▼
-IntentService      DeepSeek function-calling — extracts title / type / year /
+IntentService      LLM function-calling — extracts title / type / year /
                    season / episode, or asks a clarifying question when the
                    request is ambiguous.
    │
    ▼
-SearchService      Prowlarr first, C411 as a fallback when Prowlarr returns
-                   nothing after filtering.
+SearchService      Prowlarr — single source (it aggregates the indexers
+                   configured on the Prowlarr side).
    │
    ▼
 RankingService     Hard filters (language, quality ≥ 1080p, year/season, title)
                    → local scoring (codec, HDR, audio, seeders, size)
-                   → DeepSeek ranker (prompt v2 + per-file .torrent breakdown).
+                   → LLM ranker (prompt v2 + per-file .torrent breakdown).
    │
    ▼
 WorkflowService    Sends the winner to qBittorrent and writes result.json for
@@ -40,8 +40,9 @@ DownloadWatcher    Polls qBittorrent every 30s and notifies the user on
                    completion.
 ```
 
-The bot uses Telegram **long-polling**, so no public port is exposed. DeepSeek
-is a cloud API; everything else runs in two Docker containers (bot + UI).
+The bot uses Telegram **long-polling**, so no public port is exposed. The LLM is
+a cloud API (any OpenAI-compatible provider); everything else runs in two Docker
+containers (bot + UI).
 
 ### Why an LLM in the loop?
 
@@ -70,7 +71,7 @@ each piece testable in isolation (and is why the suite can be fully mocked).
 | Layer | Folder | Responsibility |
 |---|---|---|
 | **Domain** | `mavod/domain/` | Pure types, zero I/O: `Intent`, `Torrent`, `WorkflowResult`, `RankingDecision`. Validated at construction. |
-| **Adapters** | `mavod/adapters/` | All network I/O (DeepSeek, Prowlarr, C411, qBittorrent) plus local bencode parsing. Consume `Settings`, return Domain types. HTTP retry is centralized in `_retry.py`. |
+| **Adapters** | `mavod/adapters/` | All network I/O (LLM, Prowlarr, qBittorrent) plus local bencode parsing. Consume `Settings`, return Domain types. HTTP retry is centralized in `_retry.py`. |
 | **Services** | `mavod/services/` | Orchestrated business logic: `IntentService`, `SearchService`, `RankingService`, `WorkflowService`. No direct network calls — everything goes through adapters. |
 | **Telegram** | `mavod/telegram/` | python-telegram-bot handlers (`bot.py`), thread-safe per-user session state (`state.py`), download watching (`jobs.py`). |
 
@@ -88,15 +89,14 @@ mavod/
 ├── logging_setup.py         # structured logger (JSON via MAVOD_LOG_JSON=1)
 ├── qbittorrent_client.py    # low-level qBittorrent client (used via an adapter)
 ├── domain/                  # pure types (Intent, Torrent, WorkflowResult…)
-├── adapters/                # typed I/O (DeepSeek, Prowlarr, C411, qBittorrent, bencode)
-│   └── deepseek/
+├── adapters/                # typed I/O (LLM, Prowlarr, qBittorrent, bencode)
+│   └── llm/
 │       └── prompts/         # externalized system prompts (intent, ranker)
 ├── services/                # IntentService, SearchService, RankingService, WorkflowService
 └── telegram/                # bot.py (handlers), state.py (sessions), jobs.py (watcher)
 
 torrents_search_download/    # low-level HTTP clients (wrapped by mavod/adapters)
 ├── prowlarr_client.py
-├── c411_api_client.py
 └── torrent_filter.py        # hard filters + local scoring (language/quality/seeders/size)
 
 ui/                          # read-only Streamlit viewer
@@ -116,7 +116,7 @@ requirements/
 └── dev.txt                  # -r base + pytest + respx (tests)
 
 tests/                       # see "Tests" below
-benchmarks/                  # DeepSeek smoke test (model comparison)
+benchmarks/                  # LLM smoke test (model comparison)
 ```
 
 ---
@@ -164,22 +164,20 @@ dataclass (`mavod/config.py`) — no scattered `os.environ` lookups. Copy
 TELEGRAM_BOT_TOKEN=                   # required
 TELEGRAM_ALLOWED_USERS=               # CSV of allowed user ids; empty = nobody
 
-# DeepSeek API
-DEEPSEEK_API_KEY=                     # required
-DEEPSEEK_MODEL=deepseek-v4-flash      # default model
-DEEPSEEK_BASE_URL=https://api.deepseek.com
+# LLM (provider-agnostic, OpenAI-compatible API)
+LLM_PROVIDER=deepseek                 # deepseek|openai|mistral|groq|openrouter|xai|together|local
+LLM_API_KEY=                          # required
+LLM_MODEL=                            # empty = provider's default model
+LLM_BASE_URL=                         # empty = provider's default base URL
 
 # qBittorrent (remote WebUI)
 QB_URL=
 QB_USER=
 QB_PASS=
 
-# Indexers
+# Indexer
 PROWLARR_URL=
 PROWLARR_API_KEY=
-C411_URL_API=
-C411_API_KEY=
-C411_PASSKEY=
 
 # Optional
 MAVOD_UI_URL=http://localhost:8501
@@ -191,12 +189,12 @@ MAVOD_LOG_JSON=1                      # 1 = JSON logs, otherwise human-readable
 |---|---|---|
 | `TELEGRAM_BOT_TOKEN` | ✅ | Bot authentication |
 | `TELEGRAM_ALLOWED_USERS` | recommended | CSV of allowed user ids; empty/absent ⇒ nobody is allowed |
-| `DEEPSEEK_API_KEY` | ✅ | Intent parsing + ranking |
-| `DEEPSEEK_MODEL` | ❌ | Defaults to `deepseek-v4-flash` |
-| `DEEPSEEK_BASE_URL` | ❌ | Defaults to `https://api.deepseek.com` |
+| `LLM_API_KEY` | ✅ | Intent parsing + ranking |
+| `LLM_PROVIDER` | ❌ | Defaults to `deepseek` (presets: openai, mistral, groq, openrouter, xai, together, local) |
+| `LLM_MODEL` | ❌ | Empty ⇒ provider's default model |
+| `LLM_BASE_URL` | ❌ | Empty ⇒ provider's default base URL (required for a provider outside the registry) |
 | `QB_URL`, `QB_USER`, `QB_PASS` | ✅ | Remote qBittorrent |
-| `PROWLARR_URL`, `PROWLARR_API_KEY` | ✅ | Primary indexer |
-| `C411_URL_API`, `C411_API_KEY`, `C411_PASSKEY` | ✅ | Fallback indexer |
+| `PROWLARR_URL`, `PROWLARR_API_KEY` | ✅ | Indexer (single source) |
 | `MAVOD_UI_URL` | ❌ | Link to the viewer UI shown in bot messages |
 | `MAVOD_STATE_PATH` | ❌ | Telegram persistence file |
 
@@ -207,10 +205,8 @@ MAVOD_LOG_JSON=1                      # 1 = JSON logs, otherwise human-readable
 
 ## Torrent sources & filtering
 
-| Source | Role | When |
-|--------|------|------|
-| Prowlarr | primary | always |
-| C411 | fallback | when Prowlarr returns 0 candidates after filtering |
+A single source: **Prowlarr** (Torznab — it aggregates the indexers configured
+on the Prowlarr side, so maVOD never talks to a tracker directly).
 
 Hard filters applied **before** scoring:
 
@@ -247,8 +243,8 @@ pytest -m unit -q
 ```
 
 `tests/conftest.py` provides shared fixtures (a minimal valid `Settings`,
-factories for DeepSeek function-calling / ranker responses, and normalized
-Prowlarr/C411 search payloads) so new tests avoid duplicating setup.
+factories for LLM function-calling / ranker responses, and a normalized
+Prowlarr search payload) so new tests avoid duplicating setup.
 
 Convention: one `tests/test_<module>.py` per production module.
 
@@ -259,8 +255,8 @@ Convention: one `tests/test_<module>.py` per production module.
 - **Python 3.11**, fully type-annotated, dataclass-based domain.
 - **python-telegram-bot v21** (async, long-polling).
 - **httpx** for all HTTP, with centralized retry/backoff.
-- **DeepSeek** API for intent parsing and ranking (function calling).
-- **Prowlarr** (Torznab) + **C411** as torrent indexers.
+- **LLM** API (any OpenAI-compatible provider) for intent parsing and ranking (function calling).
+- **Prowlarr** (Torznab) as the torrent indexer.
 - **qBittorrent** WebUI API as the download backend.
 - **Streamlit** for the read-only viewer UI.
 - **pytest** + **respx** for a fully-mocked test suite.

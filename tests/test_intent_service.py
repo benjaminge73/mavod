@@ -16,15 +16,12 @@ pytestmark = pytest.mark.unit
 
 _ENV = {
     "TELEGRAM_BOT_TOKEN": "tg",
-    "DEEPSEEK_API_KEY": "sk-test",
+    "LLM_API_KEY": "sk-test",
     "QB_URL": "http://qb",
     "QB_USER": "u",
     "QB_PASS": "p",
     "PROWLARR_URL": "http://prowlarr",
     "PROWLARR_API_KEY": "pk",
-    "C411_URL_API": "http://c411",
-    "C411_API_KEY": "ck",
-    "C411_PASSKEY": "pk",
 }
 
 
@@ -239,7 +236,7 @@ class TestMultiTurnFlow:
 
     @respx.mock
     def test_history_grows_with_each_turn(self, settings):
-        """Le history transmis à DeepSeek inclut bien tous les tours précédents."""
+        """Le history transmis à LLM inclut bien tous les tours précédents."""
         captured_bodies = []
 
         def capture(request):

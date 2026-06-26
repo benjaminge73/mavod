@@ -51,7 +51,7 @@ class ProwlarrClient:
     Client pour l'API REST Prowlarr v1.
 
     Recherche via GET /api/v1/search (authentification X-Api-Key).
-    Retourne des résultats normalisés compatibles avec C411APIClient.
+    Retourne des résultats normalisés (dicts).
     """
 
     def __init__(self, api_url: str, api_key: str):
@@ -268,7 +268,7 @@ class ProwlarrClient:
         results = self.search(query, categories=[2000], imdb_id=imdb_id)
 
         # Si imdb_id fourni : pas de fallback fuzzy (zéro résultat préféré aux
-        # faux positifs). L'appelant escaladera vers C411 si besoin.
+        # faux positifs).
         if imdb_id:
             return results
 

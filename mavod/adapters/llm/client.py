@@ -1,8 +1,10 @@
-"""Client DeepSeek refactorisé : Settings-driven, retry unifié, prompt-cache aware.
+"""Client LLM agnostique (API OpenAI-compatible) : Settings-driven, retry unifié, cache-aware.
 
-Remplace `mavod/deepseek_client.py` à terme. Diffère par :
+Provider-agnostic : tout service exposant `/v1/chat/completions` (DeepSeek, OpenAI,
+Mistral, Groq, OpenRouter, xAI, Together, local…). Le provider/base_url/modèle sont
+résolus dans `Settings` (cf. `LLM_PROVIDERS`). Caractéristiques :
 - Plus de `os.environ.get` : consomme `Settings`.
-- Retry consolidé via `with_retry` (élimine la duplication chat / chat_with_tools).
+- Retry consolidé (élimine la duplication chat / chat_with_tools).
 - Honore les HTTP dates dans `Retry-After`.
 - Logger structuré (event names, extras).
 - Expose `prompt_cache_hit_tokens` dans `usage` pour tracker l'efficacité du cache.
@@ -18,10 +20,10 @@ import httpx
 from mavod.adapters._retry import parse_retry_after
 from mavod.config import Settings
 from mavod.exceptions import (
-    DeepSeekError,
-    DeepSeekMalformed,
-    DeepSeekRateLimit,
-    DeepSeekTimeout,
+    LLMError,
+    LLMMalformed,
+    LLMRateLimit,
+    LLMTimeout,
 )
 from mavod.logging_setup import get_logger
 
@@ -29,8 +31,8 @@ from mavod.logging_setup import get_logger
 log = get_logger(__name__)
 
 
-class DeepSeekAdapter:
-    """Adapter HTTP DeepSeek `/v1/chat/completions`. Thread-safe via httpx.Client."""
+class LLMAdapter:
+    """Adapter HTTP `/v1/chat/completions` (OpenAI-compatible). Thread-safe via httpx.Client."""
 
     def __init__(
         self,
@@ -40,11 +42,11 @@ class DeepSeekAdapter:
     ):
         self._settings = settings
         self._owned_http = http_client is None
-        self._http = http_client or httpx.Client(timeout=settings.deepseek_timeout)
+        self._http = http_client or httpx.Client(timeout=settings.llm_timeout)
 
     @property
     def model(self) -> str:
-        return self._settings.deepseek_model
+        return self._settings.llm_model
 
     # ─── API publique ──────────────────────────────────────────────────────
 
@@ -78,13 +80,13 @@ class DeepSeekAdapter:
     ) -> Tuple[str, Optional[str], Dict[str, Any]]:
         """Appel chat enrichi : retourne (content, reasoning_content, usage) — utile pour le ranker."""
         body: dict = {
-            "model": self._settings.deepseek_model,
+            "model": self._settings.llm_model,
             "messages": [
                 {"role": "system", "content": system},
                 {"role": "user", "content": user},
             ],
             "max_tokens": max_tokens if max_tokens is not None
-                          else self._settings.deepseek_intent_max_tokens,
+                          else self._settings.llm_intent_max_tokens,
             "temperature": temperature,
         }
         if response_format == "json_object":
@@ -99,7 +101,7 @@ class DeepSeekAdapter:
             usage = payload.get("usage") or {}
             return content, reasoning, usage
         except (KeyError, IndexError, ValueError, json.JSONDecodeError) as e:
-            raise DeepSeekMalformed(f"Réponse invalide: {e}") from e
+            raise LLMMalformed(f"Réponse invalide: {e}") from e
 
     def chat_with_tools(
         self,
@@ -112,17 +114,17 @@ class DeepSeekAdapter:
     ) -> Dict[str, Any]:
         """Appel function-calling : retourne le premier tool_call (nom + arguments parsés).
 
-        Note : `deepseek-v4-pro/flash` route vers le reasoner backend qui rejette
+        Note : certains backends reasoner (ex. `deepseek-v4-pro/flash`) rejettent
         `tool_choice="required"` (HTTP 400) → on reste sur `"auto"` + le system
         prompt mandate "exactly ONE tool per turn".
         """
         body: Dict[str, Any] = {
-            "model": self._settings.deepseek_model,
+            "model": self._settings.llm_model,
             "messages": messages,
             "tools": tools,
             "tool_choice": tool_choice,
             "max_tokens": max_tokens if max_tokens is not None
-                          else self._settings.deepseek_intent_max_tokens,
+                          else self._settings.llm_intent_max_tokens,
             "temperature": temperature,
         }
 
@@ -131,11 +133,11 @@ class DeepSeekAdapter:
         try:
             msg = payload["choices"][0]["message"]
         except (KeyError, IndexError) as e:
-            raise DeepSeekMalformed(f"Réponse sans message: {e}") from e
+            raise LLMMalformed(f"Réponse sans message: {e}") from e
 
         tool_calls = msg.get("tool_calls") or []
         if not tool_calls:
-            raise DeepSeekMalformed(
+            raise LLMMalformed(
                 f"Pas de tool_calls dans la réponse (content={msg.get('content','')[:200]!r})"
             )
 
@@ -144,7 +146,7 @@ class DeepSeekAdapter:
         tool_name = fn.get("name")
         arguments_raw = fn.get("arguments", "{}")
         if not tool_name:
-            raise DeepSeekMalformed(f"tool_call sans nom de fonction: {call!r}")
+            raise LLMMalformed(f"tool_call sans nom de fonction: {call!r}")
         try:
             arguments = (
                 json.loads(arguments_raw)
@@ -152,7 +154,7 @@ class DeepSeekAdapter:
                 else (arguments_raw or {})
             )
         except json.JSONDecodeError as e:
-            raise DeepSeekMalformed(
+            raise LLMMalformed(
                 f"Arguments tool_call non-JSON: {arguments_raw!r} ({e})"
             ) from e
 
@@ -169,7 +171,7 @@ class DeepSeekAdapter:
         if self._owned_http:
             self._http.close()
 
-    def __enter__(self) -> "DeepSeekAdapter":
+    def __enter__(self) -> "LLMAdapter":
         return self
 
     def __exit__(self, *a) -> None:
@@ -179,12 +181,12 @@ class DeepSeekAdapter:
 
     def _post(self, body: Dict[str, Any]) -> Dict[str, Any]:
         """POST /v1/chat/completions avec retry exponentiel sur 429/5xx/timeout."""
-        url = f"{self._settings.deepseek_base_url}/v1/chat/completions"
+        url = f"{self._settings.llm_base_url}/v1/chat/completions"
         headers = {
-            "Authorization": f"Bearer {self._settings.deepseek_api_key}",
+            "Authorization": f"Bearer {self._settings.llm_api_key}",
             "Content-Type":  "application/json",
         }
-        max_attempts = self._settings.deepseek_max_retries
+        max_attempts = self._settings.llm_max_retries
         delay = 1.0
 
         last_error: Optional[Exception] = None
@@ -194,11 +196,11 @@ class DeepSeekAdapter:
             except httpx.TimeoutException as e:
                 last_error = e
                 if attempt == max_attempts:
-                    raise DeepSeekTimeout(
+                    raise LLMTimeout(
                         f"Timeout après {max_attempts} tentatives"
                     ) from e
                 log.warning(
-                    "deepseek.timeout",
+                    "llm.timeout",
                     extra={"attempt": attempt, "max": max_attempts, "delay": delay},
                 )
                 _sleep(delay)
@@ -207,10 +209,10 @@ class DeepSeekAdapter:
 
             if r.status_code == 429:
                 if attempt == max_attempts:
-                    raise DeepSeekRateLimit(r.text)
+                    raise LLMRateLimit(r.text)
                 retry_after = parse_retry_after(r.headers.get("Retry-After"), delay)
                 log.warning(
-                    "deepseek.rate_limit",
+                    "llm.rate_limit",
                     extra={"attempt": attempt, "max": max_attempts, "retry_after": retry_after},
                 )
                 _sleep(retry_after)
@@ -218,11 +220,11 @@ class DeepSeekAdapter:
                 continue
 
             if r.status_code >= 500:
-                last_error = DeepSeekError(f"{r.status_code}: {r.text}")
+                last_error = LLMError(f"{r.status_code}: {r.text}")
                 if attempt == max_attempts:
                     raise last_error
                 log.warning(
-                    "deepseek.server_error",
+                    "llm.server_error",
                     extra={"attempt": attempt, "max": max_attempts, "status": r.status_code, "delay": delay},
                 )
                 _sleep(delay)
@@ -230,15 +232,15 @@ class DeepSeekAdapter:
                 continue
 
             if r.status_code != 200:
-                raise DeepSeekError(f"HTTP {r.status_code}: {r.text}")
+                raise LLMError(f"HTTP {r.status_code}: {r.text}")
 
             try:
                 return r.json()
             except (ValueError, json.JSONDecodeError) as e:
-                raise DeepSeekMalformed(f"Réponse JSON invalide: {e}") from e
+                raise LLMMalformed(f"Réponse JSON invalide: {e}") from e
 
         # Inatteignable
-        raise DeepSeekError(f"Retries épuisés ({last_error})")
+        raise LLMError(f"Retries épuisés ({last_error})")
 
 
 def _sleep(seconds: float) -> None:

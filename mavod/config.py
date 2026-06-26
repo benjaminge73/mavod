@@ -14,10 +14,20 @@ from typing import FrozenSet, Optional
 from mavod.exceptions import ConfigError
 
 
-DEFAULT_DEEPSEEK_BASE_URL = "https://api.deepseek.com"
-DEFAULT_DEEPSEEK_MODEL = "deepseek-v4-flash"
-# Allowlist vide par défaut : aucun utilisateur autorisé tant que
-# TELEGRAM_ALLOWED_USERS n'est pas configuré (défaut sûr).
+# Registry providers LLM (OpenAI-compatible). `LLM_PROVIDER` choisit un preset ;
+# `LLM_BASE_URL` / `LLM_MODEL` peuvent l'overrider. base_url = sans `/v1` final
+# (le client poste sur `{base_url}/v1/chat/completions`).
+LLM_PROVIDERS: dict[str, dict[str, str]] = {
+    "deepseek":   {"base_url": "https://api.deepseek.com",    "model": "deepseek-v4-flash"},
+    "openai":     {"base_url": "https://api.openai.com",      "model": "gpt-4o-mini"},
+    "mistral":    {"base_url": "https://api.mistral.ai",      "model": "mistral-small-latest"},
+    "groq":       {"base_url": "https://api.groq.com/openai", "model": "llama-3.3-70b-versatile"},
+    "openrouter": {"base_url": "https://openrouter.ai/api",   "model": "deepseek/deepseek-chat"},
+    "xai":        {"base_url": "https://api.x.ai",            "model": "grok-2-latest"},
+    "together":   {"base_url": "https://api.together.xyz",    "model": "meta-llama/Llama-3.3-70B-Instruct-Turbo"},
+    "local":      {"base_url": "http://localhost:11434",      "model": "llama3.1"},
+}
+DEFAULT_LLM_PROVIDER = "deepseek"
 DEFAULT_ALLOWED_USER_IDS: FrozenSet[int] = frozenset()
 DEFAULT_MAVOD_UI_URL = "http://localhost:8501"
 
@@ -28,15 +38,12 @@ class Settings:
 
     # ─── Secrets requis ────────────────────────────────────────────────────
     telegram_bot_token: str
-    deepseek_api_key: str
+    llm_api_key: str
     qb_url: str
     qb_user: str
     qb_pass: str
     prowlarr_url: str
     prowlarr_api_key: str
-    c411_url_api: str
-    c411_api_key: str
-    c411_passkey: str
 
     # ─── Bot Telegram ──────────────────────────────────────────────────────
     telegram_allowed_users: FrozenSet[int] = DEFAULT_ALLOWED_USER_IDS
@@ -47,13 +54,14 @@ class Settings:
     download_poll_interval: int = 30
     download_poll_timeout: int = 3600
 
-    # ─── DeepSeek ──────────────────────────────────────────────────────────
-    deepseek_model: str = DEFAULT_DEEPSEEK_MODEL
-    deepseek_base_url: str = DEFAULT_DEEPSEEK_BASE_URL
-    deepseek_timeout: float = 60.0
-    deepseek_max_retries: int = 3
-    deepseek_intent_max_tokens: int = 2048
-    deepseek_ranker_max_tokens: int = 8192
+    # ─── LLM (OpenAI-compatible, provider-agnostic) ────────────────────────
+    llm_provider: str = DEFAULT_LLM_PROVIDER
+    llm_model: str = LLM_PROVIDERS[DEFAULT_LLM_PROVIDER]["model"]
+    llm_base_url: str = LLM_PROVIDERS[DEFAULT_LLM_PROVIDER]["base_url"]
+    llm_timeout: float = 60.0
+    llm_max_retries: int = 3
+    llm_intent_max_tokens: int = 2048
+    llm_ranker_max_tokens: int = 8192
 
     # ─── Ranking ───────────────────────────────────────────────────────────
     candidates_threshold: int = 30
@@ -71,18 +79,39 @@ class Settings:
 
 _REQUIRED_ENV_VARS = (
     "TELEGRAM_BOT_TOKEN",
-    "DEEPSEEK_API_KEY",
+    "LLM_API_KEY",
     "QB_URL", "QB_USER", "QB_PASS",
     "PROWLARR_URL", "PROWLARR_API_KEY",
-    "C411_URL_API", "C411_API_KEY", "C411_PASSKEY",
 )
+
+
+def _resolve_llm(provider: str, base_url: Optional[str], model: Optional[str]) -> tuple[str, str, str]:
+    """Résout (provider, base_url, model) depuis le registry + overrides explicites.
+
+    `LLM_BASE_URL` / `LLM_MODEL` priment sur le preset du provider. Un provider
+    inconnu est accepté seulement si `LLM_BASE_URL` ET `LLM_MODEL` sont fournis.
+    """
+    provider = (provider or DEFAULT_LLM_PROVIDER).lower()
+    preset = LLM_PROVIDERS.get(provider)
+    resolved_base = base_url or (preset["base_url"] if preset else None)
+    resolved_model = model or (preset["model"] if preset else None)
+    if not resolved_base:
+        raise ConfigError(
+            f"LLM_PROVIDER '{provider}' inconnu — fournis LLM_BASE_URL "
+            f"ou choisis parmi: {', '.join(sorted(LLM_PROVIDERS))}"
+        )
+    if not resolved_model:
+        raise ConfigError(
+            f"LLM_MODEL requis pour le provider '{provider}' (aucun défaut connu)"
+        )
+    return provider, resolved_base.rstrip("/"), resolved_model
 
 
 def _parse_allowed_users(raw: Optional[str]) -> FrozenSet[int]:
     """CSV user_ids → frozenset[int]. Tokens vides ou invalides ignorés.
 
     Si la variable est absente OU ne contient que des tokens invalides,
-    renvoie DEFAULT_ALLOWED_USER_IDS (sémantique stricte par défaut).
+    renvoie DEFAULT_ALLOWED_USER_IDS (= vide → personne autorisé, défaut sûr).
     """
     if not raw:
         return DEFAULT_ALLOWED_USER_IDS
@@ -130,20 +159,24 @@ def _load_from_environ() -> Settings:
     if missing:
         raise ConfigError(f"Variables d'env requises absentes: {', '.join(missing)}")
 
+    provider, base_url, model = _resolve_llm(
+        _env("LLM_PROVIDER", DEFAULT_LLM_PROVIDER),
+        _env("LLM_BASE_URL"),
+        _env("LLM_MODEL"),
+    )
+
     return Settings(
         telegram_bot_token=os.environ["TELEGRAM_BOT_TOKEN"],
-        deepseek_api_key=os.environ["DEEPSEEK_API_KEY"],
+        llm_api_key=os.environ["LLM_API_KEY"],
         qb_url=os.environ["QB_URL"],
         qb_user=os.environ["QB_USER"],
         qb_pass=os.environ["QB_PASS"],
         prowlarr_url=os.environ["PROWLARR_URL"],
         prowlarr_api_key=os.environ["PROWLARR_API_KEY"],
-        c411_url_api=os.environ["C411_URL_API"],
-        c411_api_key=os.environ["C411_API_KEY"],
-        c411_passkey=os.environ["C411_PASSKEY"],
         telegram_allowed_users=_parse_allowed_users(_env("TELEGRAM_ALLOWED_USERS")),
-        deepseek_model=_env("DEEPSEEK_MODEL", DEFAULT_DEEPSEEK_MODEL),
-        deepseek_base_url=_env("DEEPSEEK_BASE_URL", DEFAULT_DEEPSEEK_BASE_URL).rstrip("/"),
+        llm_provider=provider,
+        llm_model=model,
+        llm_base_url=base_url,
         mavod_ui_url=_env("MAVOD_UI_URL", DEFAULT_MAVOD_UI_URL),
         state_path=Path(_env("MAVOD_STATE_PATH", "/app/state/persistence.pkl")),
         log_path=Path(_env("MAVOD_LOG_PATH", "/app/logs/bot.log")),

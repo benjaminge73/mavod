@@ -23,17 +23,17 @@ chaque modèle, et compare **qualité** (cas attendus), **latence**, **tokens** 
 ### Lancer en local
 
 ```bash
-DEEPSEEK_API_KEY=sk-... python benchmarks/deepseek_smoke.py
+LLM_API_KEY=sk-... python benchmarks/deepseek_smoke.py
 python benchmarks/deepseek_smoke.py --dry-run                 # valide le câblage, 0 appel API
 python benchmarks/deepseek_smoke.py --models deepseek-v4-flash --suite rank
 python benchmarks/deepseek_smoke.py --json out.json           # dump machine-lisible
 ```
 
-Le script construit une `Settings` minimale (seul `DEEPSEEK_API_KEY` est requis) et
-appelle directement `IntentService` / `DeepSeekRankingStrategy` — donc les **vrais**
+Le script construit une `Settings` minimale (seul `LLM_API_KEY` est requis) et
+appelle directement `IntentService` / `LLMRankingStrategy` — donc les **vrais**
 prompts et schémas d'outils du pipeline.
 
-### Lancer via GitHub Actions (utilise le secret `DEEPSEEK_API_KEY`)
+### Lancer via GitHub Actions (utilise le secret `LLM_API_KEY`)
 
 Onglet **Actions → "DeepSeek Benchmark (manual)" → Run workflow** : renseigne le(s)
 modèle(s) en CSV et la suite. Le verdict s'affiche dans le *job summary* ; le détail

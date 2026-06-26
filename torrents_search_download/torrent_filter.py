@@ -178,7 +178,7 @@ def is_banned_language(title: str) -> bool:
     MULTI/MULTi ni VOSTFR à côté). Un release "MULTI.VFF" garde la piste
     originale + un dub français spécifique : c'est légitime et souvent la
     SEULE option pour les films/animations distribués en France (ex. Pixar
-    Up → "Là.Haut.MULTI.VFF.2160p.BluRay"). Le ranker DeepSeek pénalise
+    Up → "Là.Haut.MULTI.VFF.2160p.BluRay"). Le ranker LLM pénalise
     ensuite VFF (-5) face à MULTI seul (+2) → net -3, déprioritisé mais
     non exclu.
 

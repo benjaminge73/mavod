@@ -28,8 +28,8 @@ from telegram.ext import (
     filters,
 )
 
-from mavod.adapters.deepseek import DeepSeekAdapter
-from mavod.adapters.deepseek.prompts import load_intent_prompt, prompt_hash
+from mavod.adapters.llm import LLMAdapter
+from mavod.adapters.llm.prompts import load_intent_prompt, prompt_hash
 from mavod.adapters.qbittorrent import QBittorrentAdapter
 from mavod.config import Settings, load_settings
 from mavod.domain import ClarificationRequest, Intent
@@ -67,11 +67,11 @@ class BotContext:
         self.system_prompt = load_intent_prompt()
 
         # Adapters partagés
-        self.deepseek = DeepSeekAdapter(settings)
+        self.llm = LLMAdapter(settings)
         self.qb = QBittorrentAdapter(settings)
 
         # Services
-        self.intent_service = IntentService(settings, adapter=self.deepseek)
+        self.intent_service = IntentService(settings, adapter=self.llm)
         self.search_service = SearchService(settings)
         self.ranking_service = RankingService(settings)
         self.workflow_service = WorkflowService(
@@ -418,7 +418,7 @@ def build_application(settings: Optional[Settings] = None) -> Application:
     log.info(
         "bot.ready",
         extra={
-            "model": ctx.deepseek.model,
+            "model": ctx.llm.model,
             "intent_prompt_hash": prompt_hash(ctx.system_prompt),
             "allowed_users": sorted(settings.telegram_allowed_users),
             "max_concurrent": settings.max_concurrent_workflows,

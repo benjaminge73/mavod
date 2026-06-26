@@ -1,8 +1,8 @@
 """
-mavod-ui — Read-only viewer for DeepSeek torrent selections.
+mavod-ui — Read-only viewer for the LLM's torrent selections.
 
 Shows for each historical search:
-  - The torrent picked by DeepSeek + its reasoning
+  - The torrent picked by the LLM + its reasoning
   - The full ranked candidate list
   - A button to push an alternative candidate to qBittorrent
 """
@@ -100,7 +100,7 @@ st.markdown(
     f'<div class="llm-banner">'
     f'  <div class="llm-banner-icon">AI</div>'
     f'  <div class="llm-banner-body">'
-    f'    <div class="llm-banner-label">Choix DeepSeek &mdash; {llm_rank_label}</div>'
+    f'    <div class="llm-banner-label">Choix de l\'IA &mdash; {llm_rank_label}</div>'
     f'    <div class="llm-banner-text">{llm_name}</div>'
     f'  </div>'
     f'</div>',
@@ -193,7 +193,7 @@ for torrent in sorted_torrents:
     if is_llm:
         card_cls += " is-llm"
 
-    tags_html = '<span class="tag llm-tag">Choisi par DeepSeek</span>' if is_llm else ""
+    tags_html = '<span class="tag llm-tag">Choisi par l\'IA</span>' if is_llm else ""
 
     st.markdown(
         f'<div class="{card_cls}">'

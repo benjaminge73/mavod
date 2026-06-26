@@ -3,7 +3,7 @@
 Architecture :
 - config / exceptions / logging_setup    — primitives transverses
 - domain/                                — types métier (Intent, Torrent, …)
-- adapters/                              — I/O isolé (DeepSeek, Prowlarr, C411, qB, bencode)
+- adapters/                              — I/O isolé (LLM, Prowlarr, qB, bencode)
 - services/                              — orchestration (intent, search, ranking, workflow)
 - telegram/                              — bot + lifecycle (state, jobs)
 

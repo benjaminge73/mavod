@@ -17,21 +17,21 @@ class ConfigError(MavodError):
     """Configuration invalide ou incomplète (variable d'env manquante, etc.)."""
 
 
-# ─── DeepSeek ────────────────────────────────────────────────────────────────
+# ─── LLM ─────────────────────────────────────────────────────────────────────
 
-class DeepSeekError(MavodError):
-    """Erreur générique DeepSeek API."""
+class LLMError(MavodError):
+    """Erreur générique de l'API LLM (provider OpenAI-compatible)."""
 
 
-class DeepSeekTimeout(DeepSeekError):
+class LLMTimeout(LLMError):
     """Timeout réseau après épuisement des retries."""
 
 
-class DeepSeekRateLimit(DeepSeekError):
+class LLMRateLimit(LLMError):
     """HTTP 429 après épuisement des retries."""
 
 
-class DeepSeekMalformed(DeepSeekError):
+class LLMMalformed(LLMError):
     """Réponse JSON malformée ou champs manquants."""
 
 
@@ -48,15 +48,11 @@ class IntentValidationError(IntentParseError):
 # ─── Sources de torrents ─────────────────────────────────────────────────────
 
 class TorrentSourceError(MavodError):
-    """Erreur d'un indexer (Prowlarr, C411…)."""
+    """Erreur d'un indexer (Prowlarr)."""
 
 
 class ProwlarrError(TorrentSourceError):
     """Erreur de l'indexer Prowlarr."""
-
-
-class C411Error(TorrentSourceError):
-    """Erreur de l'indexer C411."""
 
 
 # ─── Ranking ─────────────────────────────────────────────────────────────────

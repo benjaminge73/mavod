@@ -1,7 +1,7 @@
-"""Service de ranking : filter local + scoring + LLM DeepSeek.
+"""Service de ranking : filter local + scoring + LLM.
 
 Wrappe le pipeline legacy `torrent_filter.filter_and_select_torrents` +
-`DeepSeekRankingModel` mais expose une interface typée `Torrent` →
+le ranker LLM mais expose une interface typée `Torrent` →
 `RankingDecision`.
 
 À terme, le filter local pourra être réécrit ici en consommant
@@ -16,11 +16,11 @@ from dataclasses import asdict, replace
 from typing import List, Mapping, Optional, Protocol, Sequence
 
 from mavod.adapters.bencode import parse_torrent_bytes
-from mavod.adapters.deepseek import DeepSeekAdapter
-from mavod.adapters.deepseek.prompts import load_ranker_prompt, prompt_hash
+from mavod.adapters.llm import LLMAdapter
+from mavod.adapters.llm.prompts import load_ranker_prompt, prompt_hash
 from mavod.config import Settings
 from mavod.domain import Intent, RankingDecision, Torrent, TorrentFile
-from mavod.exceptions import DeepSeekError, RankingError
+from mavod.exceptions import LLMError, RankingError
 from mavod.logging_setup import get_logger
 
 
@@ -38,19 +38,19 @@ class RankingStrategy(Protocol):
     ) -> RankingDecision: ...
 
 
-# ─── DeepSeek Strategy ───────────────────────────────────────────────────────
+# ─── LLM Strategy ────────────────────────────────────────────────────────────
 
 
-class DeepSeekRankingStrategy:
-    """Stratégie de ranking via API DeepSeek + prompt v2 externalisé."""
+class LLMRankingStrategy:
+    """Stratégie de ranking via API LLM + prompt v2 externalisé."""
 
     _RANKING_RE = re.compile(
         r"\*\*Best choice:\*\*\s*Torrent\s*(\d+)", re.IGNORECASE
     )
 
-    def __init__(self, settings: Settings, *, adapter: Optional[DeepSeekAdapter] = None):
+    def __init__(self, settings: Settings, *, adapter: Optional[LLMAdapter] = None):
         self._settings = settings
-        self._adapter = adapter or DeepSeekAdapter(settings)
+        self._adapter = adapter or LLMAdapter(settings)
         self._system_prompt = load_ranker_prompt()
         log.info(
             "ranker.init",
@@ -71,11 +71,11 @@ class DeepSeekRankingStrategy:
             content, reasoning, usage = self._adapter.chat_with_usage(
                 system=self._system_prompt,
                 user=user_msg,
-                max_tokens=self._settings.deepseek_ranker_max_tokens,
+                max_tokens=self._settings.llm_ranker_max_tokens,
                 temperature=0.1,
             )
-        except DeepSeekError as e:
-            raise RankingError(f"DeepSeek KO: {e}") from e
+        except LLMError as e:
+            raise RankingError(f"LLM KO: {e}") from e
 
         best = self._parse_best_choice(content, candidates)
         ranked = self._parse_ranking(content, candidates) or list(candidates)
@@ -164,11 +164,11 @@ class DeepSeekRankingStrategy:
         return out
 
 
-# ─── Ranking Service (filter + DeepSeek) ─────────────────────────────────────
+# ─── Ranking Service (filter + LLM) ──────────────────────────────────────────
 
 
 class RankingService:
-    """Pipeline complet : filter local → top-N → DeepSeek LLM rank.
+    """Pipeline complet : filter local → top-N → LLM rank.
 
     Délègue le filtrage à `torrents_search_download.torrent_filter` (V1
     intact) via conversion `Torrent` ↔ dict.
@@ -178,10 +178,10 @@ class RankingService:
         self,
         settings: Settings,
         *,
-        deepseek_strategy: Optional[DeepSeekRankingStrategy] = None,
+        llm_strategy: Optional[LLMRankingStrategy] = None,
     ):
         self._settings = settings
-        self._deepseek = deepseek_strategy or DeepSeekRankingStrategy(settings)
+        self._llm = llm_strategy or LLMRankingStrategy(settings)
 
     def filter_and_score(
         self,
@@ -216,7 +216,7 @@ class RankingService:
     ) -> RankingDecision:
         """Étape 3 : ranking LLM. Enrichit avec breakdown fichiers si bytes dispo."""
         enriched = [_enrich_files_from_bytes(t) for t in candidates]
-        return self._deepseek.rank(intent, enriched)
+        return self._llm.rank(intent, enriched)
 
 
 # ─── Conversion helpers ──────────────────────────────────────────────────────
