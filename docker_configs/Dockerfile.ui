@@ -1,0 +1,44 @@
+# mavod-ui container : Streamlit viewer read-only.
+# Mêmes principes que Dockerfile.bot : multi-stage, pip wheels mis en cache,
+# uid 1000 pour aligner avec les bind-mounts host (/opt/mavod owned by ubuntu).
+
+# ─── deps : install streamlit + base ──────────────────────────────────────────
+FROM python:3.11-slim AS deps
+
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends ca-certificates \
+ && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /tmp/build
+COPY requirements/base.txt requirements/ui.txt requirements/
+RUN pip install --no-cache-dir --prefix=/install -r requirements/ui.txt
+
+
+# ─── runtime ──────────────────────────────────────────────────────────────────
+FROM python:3.11-slim AS runtime
+
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends ca-certificates \
+ && rm -rf /var/lib/apt/lists/*
+
+RUN groupadd -g 1000 mavod \
+ && useradd -u 1000 -g 1000 -m -s /bin/bash mavod
+
+WORKDIR /app
+
+COPY --from=deps /install /usr/local
+COPY ui/ ./
+COPY mavod/ ./mavod/
+
+RUN chown -R mavod:mavod /app
+
+USER mavod
+ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
+
+EXPOSE 8501
+
+CMD ["streamlit", "run", "main.py", \
+     "--server.port=8501", \
+     "--server.address=0.0.0.0", \
+     "--server.headless=true", \
+     "--browser.gatherUsageStats=false"]

@@ -1,0 +1,5 @@
+# Top-level requirements = dev/test (used by CI + local development).
+# Production containers use requirements/base.txt (bot) or
+# requirements/ui.txt (mavod-ui) — see docker_configs/Dockerfile.{bot,ui}.
+
+-r requirements/dev.txt

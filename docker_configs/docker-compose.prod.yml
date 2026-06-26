@@ -1,0 +1,55 @@
+name: mavod
+
+services:
+  mavod-bot:
+    build:
+      context: ..
+      dockerfile: docker_configs/Dockerfile.bot
+    container_name: mavod-bot
+    restart: unless-stopped
+    env_file:
+      - ../.env
+    environment:
+      - TZ=Europe/Paris
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - ../torrents:/app/torrents
+      - ../logs:/app/logs
+      - ../state:/app/state
+    networks:
+      - mavod_network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import httpx; httpx.get('https://api.deepseek.com', timeout=5)"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  mavod-ui:
+    build:
+      context: ..
+      dockerfile: docker_configs/Dockerfile.ui
+    container_name: mavod-ui
+    restart: unless-stopped
+    env_file:
+      - ../.env
+    environment:
+      - TZ=Europe/Paris
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - ../torrents:/app/torrents:ro
+    networks:
+      - mavod_network
+      - web-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8501/_stcore/health', timeout=5)"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+networks:
+  mavod_network:
+    driver: bridge
+  web-network:
+    external: true

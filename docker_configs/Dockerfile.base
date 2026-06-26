@@ -1,0 +1,15 @@
+# Multi-stage base partagée entre Dockerfile.bot et Dockerfile.ui.
+# Couche `system` : python:3.11-slim + ca-certs + user mavod (uid 1000).
+# Layer caching maximisé : la moindre modification de mavod/ ne ré-installe pas
+# les dépendances.
+
+FROM python:3.11-slim AS system
+
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends ca-certificates \
+ && rm -rf /var/lib/apt/lists/*
+
+RUN groupadd -g 1000 mavod \
+ && useradd -u 1000 -g 1000 -m -s /bin/bash mavod
+
+WORKDIR /app

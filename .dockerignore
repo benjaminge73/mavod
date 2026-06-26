@@ -1,0 +1,30 @@
+# Runtime / output (jamais dans le build context)
+torrents/
+downloads/
+logs/
+output/
+nohup.out
+
+# Python caches
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# Environnements virtuels + secrets
+.venv/
+venv/
+.env
+.env.*
+
+# Build / artefacts
+dist/
+build/
+
+# État / sessions
+*.pkl
+
+# Git / IDE / OS
+.git/
+.vscode/
+.idea/
+.DS_Store

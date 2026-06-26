@@ -1,0 +1,22 @@
+# Production runtime dependencies (mavod-bot container).
+# Locked versions — bump intentionally via pip-compile or manual edit.
+
+# HTTP / network
+httpx==0.28.1
+requests==2.32.5
+certifi==2025.8.3
+charset-normalizer==3.4.3
+idna==3.10
+urllib3==2.5.0
+
+# Telegram
+python-telegram-bot[job-queue]==21.9
+
+# Torrent parsing + indexer XML responses
+bencodepy==0.9.5
+beautifulsoup4==4.13.5
+lxml==6.0.1
+
+# Misc
+python-dotenv==1.1.1
+tenacity==9.1.2

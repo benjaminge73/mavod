@@ -1,0 +1,25 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+          cache: pip
+
+      - name: Install dev deps
+        run: pip install -r requirements/dev.txt
+
+      # Unit tests are fully mocked (respx for HTTP) — no real secrets needed.
+      - name: Unit tests
+        run: pytest -m unit -v

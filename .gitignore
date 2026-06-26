@@ -1,0 +1,57 @@
+# ── Secrets ──────────────────────────────────────────────────────────────────
+.env
+.env.*
+!.env.example
+.mcp.json
+.claude/
+
+# ── Runtime / output ─────────────────────────────────────────────────────────
+torrents/
+downloads/
+logs/
+output/
+nohup.out
+debug_fs/
+
+# ── Python ───────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# ── Build / artefacts ────────────────────────────────────────────────────────
+dist/
+build/
+*.bak
+
+# ── État / sessions / DBs locales ────────────────────────────────────────────
+*.pkl
+*.log
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+*.db
+*.journal
+
+# ── IDE ──────────────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+.streamlit/
+
+# ── macOS ────────────────────────────────────────────────────────────────────
+.DS_Store
+
+# ── Benchmarks (sorties locales) ─────────────────────────────────────────────
+benchmarks/result.json
+benchmarks/output.txt
+
+# ── Artefacts lourds à ne jamais committer (purge historique 2026-06) ─────────
+*.tar.gz
+bin/chromedriver
+Jackett/
+data/*.png
+docker_configs/n8n_config*/

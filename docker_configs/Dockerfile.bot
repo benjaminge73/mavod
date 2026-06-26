@@ -1,0 +1,41 @@
+# mavod-bot container : Telegram bot long-polling, in-process workflow.
+# Multi-stage : `deps` installe les deps pinned dans une image jetable,
+# `runtime` copie wheels + sources et passe en uid 1000.
+
+# ─── deps : install pip wheels ───────────────────────────────────────────────
+FROM python:3.11-slim AS deps
+
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends ca-certificates \
+ && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /tmp/build
+COPY requirements/base.txt requirements/
+RUN pip install --no-cache-dir --prefix=/install -r requirements/base.txt
+
+
+# ─── runtime : python:3.11-slim + uid 1000 + sources ─────────────────────────
+FROM python:3.11-slim AS runtime
+
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends ca-certificates \
+ && rm -rf /var/lib/apt/lists/*
+
+RUN groupadd -g 1000 mavod \
+ && useradd -u 1000 -g 1000 -m -s /bin/bash mavod
+
+WORKDIR /app
+
+# Copie les site-packages installés à l'étape `deps`
+COPY --from=deps /install /usr/local
+
+# Sources + dossiers persistance (montés depuis l'host au runtime)
+COPY mavod/ ./mavod/
+COPY torrents_search_download/ ./torrents_search_download/
+RUN mkdir -p /app/state /app/torrents /app/logs \
+ && chown -R mavod:mavod /app
+
+USER mavod
+ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
+
+CMD ["python", "-m", "mavod"]

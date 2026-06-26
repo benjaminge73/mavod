@@ -1,0 +1,6 @@
+# Production runtime dependencies for the mavod-ui container.
+# UI requires Streamlit + a subset of base (requests for qBittorrent push,
+# bencodepy unused at runtime today but kept for forward compat).
+
+-r base.txt
+streamlit>=1.40.0,<2.0

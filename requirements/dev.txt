@@ -1,0 +1,6 @@
+# Dev / CI dependencies (tests, type checking).
+# NOT installed in production containers.
+
+-r base.txt
+pytest==8.3.4
+respx==0.22.0
