@@ -55,3 +55,4 @@ bin/chromedriver
 Jackett/
 data/*.png
 docker_configs/n8n_config*/
+.codebase-memory/
