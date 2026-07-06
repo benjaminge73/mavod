@@ -1,0 +1,11 @@
+{
+    "schema_version": 1,
+    "commit": "130c33f7a18121d575bc6cb97827426a9dc119c2",
+    "indexed_at": "2026-07-06T08:10:15Z",
+    "project": "home-ubuntu-repos-github-benjaminge73-mavod",
+    "nodes": 847,
+    "edges": 3888,
+    "original_size": 3932160,
+    "compressed_size": 729860,
+    "compression_level": 9
+}
