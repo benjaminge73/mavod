@@ -3,4 +3,4 @@
 
 -r base.txt
 pytest==8.3.4
-respx==0.22.0
+respx==0.23.1
