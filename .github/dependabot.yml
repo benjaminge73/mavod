@@ -7,8 +7,13 @@
 version: 2
 
 updates:
+  # Scanné sur /requirements et non sur la racine : la racine ne déclare aucune
+  # dépendance directe (requirements.txt = `-r requirements/dev.txt`) et sa
+  # chaîne d'inclusion s'arrête à dev.txt → base.txt, ce qui laissait ui.txt
+  # (streamlit, conteneur mavod-ui) hors surveillance. Pointer le dossier fait
+  # ramasser base.txt, dev.txt ET ui.txt par un seul bloc, sans doublon.
   - package-ecosystem: "pip"
-    directory: "/"
+    directory: "/requirements"
     schedule:
       interval: "weekly"
       day: "monday"
@@ -19,6 +24,9 @@ updates:
       - "dependencies"
     commit-message:
       prefix: "chore(deps)"
+    # ui.txt déclare streamlit en range (>=1.40.0,<2.0) : sans `increase`, une
+    # release 1.x satisfait déjà la contrainte et ne déclencherait aucune PR.
+    versioning-strategy: increase
     groups:
       python-minor-patch:
         patterns:
