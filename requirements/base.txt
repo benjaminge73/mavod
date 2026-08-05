@@ -10,7 +10,7 @@ idna==3.18
 urllib3==2.7.0
 
 # Telegram
-python-telegram-bot[job-queue]==21.9
+python-telegram-bot[job-queue]==22.8
 
 # Torrent parsing + indexer XML responses
 bencodepy==0.9.5
