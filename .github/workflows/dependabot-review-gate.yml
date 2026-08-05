@@ -31,19 +31,22 @@ jobs:
         env:
           NAMES: ${{ steps.meta.outputs.dependency-names }}
         run: |
+          # Trim en expansion bash pure : xargs interprete les apostrophes et
+          # cassait sur les commentaires du fichier de liste.
+          trim() { local s="$1"; s="${s#"${s%%[![:space:]]*}"}"; printf '%s' "${s%"${s##*[![:space:]]}"}"; }
           hits=""
           IFS=',' read -ra deps <<< "$NAMES"
           for d in "${deps[@]}"; do
-            d=$(echo "$d" | xargs)
-            [ -z "$d" ] && continue
-            while read -r p; do
-              p=$(echo "$p" | xargs)
-              [ -z "$p" ] && continue
-              case "$p" in \#*) continue;; esac
-              case "$d" in $p) hits="$hits $d";; esac
+            d=$(trim "$d")
+            [ -n "$d" ] || continue
+            while IFS= read -r p || [ -n "$p" ]; do
+              p="${p%%#*}"
+              p=$(trim "$p")
+              [ -n "$p" ] || continue
+              case "$d" in $p) hits="$hits $d" ;; esac
             done < .github/review-required.txt
           done
-          echo "hits=$(echo $hits | xargs)" >> "$GITHUB_OUTPUT"
+          echo "hits=$(trim "$hits")" >> "$GITHUB_OUTPUT"
 
       - name: Flague la PR
         if: steps.match.outputs.hits != ''
