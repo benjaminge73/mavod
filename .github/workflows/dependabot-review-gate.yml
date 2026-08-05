@@ -1,0 +1,60 @@
+name: Dependabot review gate
+
+# Flague les PR Dependabot qui touchent une dépendance listée dans
+# .github/review-required.txt. Le label suspend l'auto-merge sans rien
+# changer aux tests — une PR flaguée reste verte et relisible par un agent.
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  gate:
+    name: review gate
+    if: github.event.pull_request.user.login == 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Metadonnees Dependabot
+        id: meta
+        uses: dependabot/fetch-metadata@v2
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Confronte a la liste de relecture
+        id: match
+        env:
+          NAMES: ${{ steps.meta.outputs.dependency-names }}
+        run: |
+          hits=""
+          IFS=',' read -ra deps <<< "$NAMES"
+          for d in "${deps[@]}"; do
+            d=$(echo "$d" | xargs)
+            [ -z "$d" ] && continue
+            while read -r p; do
+              p=$(echo "$p" | xargs)
+              [ -z "$p" ] && continue
+              case "$p" in \#*) continue;; esac
+              case "$d" in $p) hits="$hits $d";; esac
+            done < .github/review-required.txt
+          done
+          echo "hits=$(echo $hits | xargs)" >> "$GITHUB_OUTPUT"
+
+      - name: Flague la PR
+        if: steps.match.outputs.hits != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+          HITS: ${{ steps.match.outputs.hits }}
+        run: |
+          gh label create review-required --repo "$REPO" --color D93F0B \
+            --description "Relecture manuelle requise, pas d auto-merge" --force
+          gh pr edit "$PR" --repo "$REPO" --add-label review-required
+          gh pr comment "$PR" --repo "$REPO" --body \
+            "Relecture manuelle requise : \`$HITS\`. Cette dependance touche une surface visible ou critique de l application. L auto-merge est suspendu ; les tests continuent de tourner."

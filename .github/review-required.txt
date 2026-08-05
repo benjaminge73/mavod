@@ -1,0 +1,11 @@
+# Dépendances touchant une surface visible ou critique de l'application.
+# Une PR Dependabot portant sur l'une d'elles reçoit le label `review-required`
+# et n'est pas auto-mergée. Les tests continuent de tourner normalement.
+# Motifs shell autorisés (ex. @radix-ui/*). Une ligne = un paquet.
+
+python-telegram-bot
+streamlit
+lxml
+beautifulsoup4
+bencodepy
+httpx

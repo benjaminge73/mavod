@@ -39,7 +39,21 @@ jobs:
       contents: write
       pull-requests: write
     steps:
+      - name: Verifie l'absence de flag de relecture
+        id: gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh pr view ${{ github.event.pull_request.number }} --repo ${{ github.repository }} \
+               --json labels --jq '.labels[].name' | grep -qx 'review-required'; then
+            echo "hold=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::PR flaguee review-required, auto-merge suspendu."
+          else
+            echo "hold=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Squash-merge la PR et supprime la branche
+        if: steps.gate.outputs.hold != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: >-
