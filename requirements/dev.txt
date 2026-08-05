@@ -2,5 +2,5 @@
 # NOT installed in production containers.
 
 -r base.txt
-pytest==8.3.4
+pytest==9.1.1
 respx==0.23.1
