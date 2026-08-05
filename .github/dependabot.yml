@@ -1,0 +1,43 @@
+# Surveillance des dépendances — géré par Dependabot.
+# Les mises à jour de SÉCURITÉ ne passent pas par ce fichier : elles sortent
+# en PR individuelles et immédiates dès qu'une alerte CVE est levée.
+# Ci-dessous : uniquement les version updates hebdomadaires.
+# Les majeures restent hors groupe volontairement (1 PR par paquet).
+
+version: 2
+
+updates:
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "Europe/Paris"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+    commit-message:
+      prefix: "chore(deps)"
+    groups:
+      python-minor-patch:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "Europe/Paris"
+    open-pull-requests-limit: 3
+    labels:
+      - "dependencies"
+      - "ci"
+    groups:
+      actions:
+        patterns:
+          - "*"
