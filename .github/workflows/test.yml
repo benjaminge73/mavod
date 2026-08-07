@@ -26,6 +26,11 @@ jobs:
 
   # Merge automatique au vert : PR de l'owner ou de Dependabot (tous types de
   # mises à jour, majors comprises). Remplace l'auto-merge natif GitHub.
+  #
+  # mavod est un depot vitrine : le seul controle avant merge est la CI. Le gate
+  # de relecture automatique (dependabot-review-gate.yml + review-required.txt)
+  # a ete retire le 2026-08-07 — il flaguait des paquets dont la regression ne
+  # se voit pas ici, au prix d'une PR bloquee a la main a chaque fois.
   auto-merge:
     name: auto-merge
     needs: unit
@@ -39,6 +44,9 @@ jobs:
       contents: write
       pull-requests: write
     steps:
+      # Le label n'est plus pose par aucun workflow : il reste comme frein
+      # manuel. Poser `review-required` a la main sur une PR suspend son
+      # auto-merge, le retirer le relance au prochain push ou re-run.
       - name: Verifie l'absence de flag de relecture
         id: gate
         env:
