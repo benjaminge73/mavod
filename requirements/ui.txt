@@ -3,4 +3,4 @@
 # bencodepy unused at runtime today but kept for forward compat).
 
 -r base.txt
-streamlit>=1.61.1,<2.0
+streamlit>=1.62.0,<2.0
