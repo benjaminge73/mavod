@@ -6,7 +6,7 @@ httpx==0.28.1
 requests==2.34.2
 certifi==2026.7.22
 charset-normalizer==3.5.1
-idna==3.18
+idna==3.19
 urllib3==2.7.0
 
 # Telegram
@@ -15,7 +15,7 @@ python-telegram-bot[job-queue]==22.8
 # Torrent parsing + indexer XML responses
 bencodepy==0.9.5
 beautifulsoup4==4.15.0
-lxml==6.1.1
+lxml==6.1.2
 
 # Misc
 python-dotenv==1.2.3
