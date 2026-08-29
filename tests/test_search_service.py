@@ -102,11 +102,22 @@ class TestSearchService:
         outcome = svc.search(Intent(title="A", type="movie"))
         assert len(outcome.raw_pool) == 1
 
-    def test_no_infohash_no_dedup(self, settings):
-        """Ne dédoublonne pas en l'absence d'infohash."""
+    def test_dedup_without_infohash(self, settings):
+        """Dédoublonne aussi sans infohash : même release, trackers différents."""
         prow = MagicMock()
-        # Sans infohash, on ne dédup pas (sécurité : préserver des candidats valides)
-        prow.search_movies.return_value = [_t("A"), _t("B")]
+        prow.search_series.return_value = [
+            _t("Show.S01.MULTI.1080p.WEB-DL-GRP"),
+            _t("Show S01 MULTI 1080p WEB DL GRP"),
+            _t("Show.S01.MULTI.1080p.WEB.DL-GRP [www.torrent9.xx]"),
+        ]
+        svc = SearchService(settings, prowlarr=prow)
+        outcome = svc.search(Intent(title="Show", type="serie", season=1))
+        assert len(outcome.raw_pool) == 1
+
+    def test_distinct_releases_are_kept(self, settings):
+        """Deux releases réellement différentes survivent à la dédup."""
+        prow = MagicMock()
+        prow.search_movies.return_value = [_t("A", size_gb=5.0), _t("B", size_gb=9.0)]
         svc = SearchService(settings, prowlarr=prow)
         outcome = svc.search(Intent(title="A", type="movie"))
         assert len(outcome.raw_pool) == 2

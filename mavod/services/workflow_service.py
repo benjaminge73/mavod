@@ -12,7 +12,7 @@ import time
 from dataclasses import dataclass, asdict
 from datetime import datetime
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Mapping, Optional
 from urllib.parse import quote
 
 from mavod.adapters.qbittorrent import QBittorrentAdapter
@@ -314,6 +314,7 @@ class WorkflowService:
 
 def _torrent_to_ui_dict(t: Torrent) -> dict:
     """Convertit un Torrent en dict consommable par mavod-ui (rétrocompat result.json)."""
+    extra = dict(t.extra) if isinstance(t.extra, Mapping) else {}
     return {
         "title":     t.title,
         "name":      t.title,  # alias UI
@@ -328,4 +329,7 @@ def _torrent_to_ui_dict(t: Torrent) -> dict:
         "torrent_url": t.torrent_url,  # consommé par mavod-ui pour le download alternatif
         "score":     t.score,
         "episode_match": t.episode_match,
+        # Copies de la même release écartées par la dédup cross-tracker
+        "duplicate_count":    int(extra.get("duplicate_count", 1) or 1),
+        "duplicate_indexers": list(extra.get("duplicate_indexers", ()) or ()),
     }
