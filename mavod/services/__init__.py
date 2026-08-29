@@ -4,6 +4,7 @@ Chaque service consomme des `adapters/` et renvoie/manipule des
 `domain/` dataclasses. Pas d'I/O direct, pas d'os.environ.
 """
 
+from mavod.services.dedup import dedup_torrents, normalize_release_name
 from mavod.services.intent_service import IntentService
 from mavod.services.ranking_service import (
     LLMRankingStrategy,
@@ -18,6 +19,8 @@ from mavod.services.workflow_service import (
 
 __all__ = [
     "LLMRankingStrategy",
+    "dedup_torrents",
+    "normalize_release_name",
     "IntentService",
     "RankingService",
     "SearchService",

@@ -239,6 +239,9 @@ def _torrent_to_legacy_dict(t: Torrent) -> dict:
         "categories":  extra.get("categories", []),
         "publishDate": extra.get("publishDate", ""),
         "downloads":   extra.get("downloads", 0),
+        # Traçabilité de la dédup cross-tracker (cf. services/dedup.py)
+        "duplicate_count":    extra.get("duplicate_count", 1),
+        "duplicate_indexers": extra.get("duplicate_indexers", ()),
         # Conserve les bytes pour enrichissement downstream
         "_torrent_bytes": t.torrent_bytes,
     }
@@ -266,6 +269,8 @@ def _legacy_dict_to_torrent(d: dict) -> Torrent:
             "publishDate": d.get("publishDate", ""),
             "downloads":   d.get("downloads", 0),
             "profile_name": d.get("profile_name", ""),
+            "duplicate_count":    d.get("duplicate_count", 1),
+            "duplicate_indexers": d.get("duplicate_indexers", ()),
         },
     )
 

@@ -185,6 +185,7 @@ for torrent in sorted_torrents:
     name = torrent.get("name", "Unknown")
     size = torrent.get("size", "—")
     seeds = torrent.get("seeds", 0)
+    duplicates = torrent.get("duplicates", 1)
     is_llm = torrent.get("llm", False)
 
     seed_cls = "hi" if seeds >= 80 else ("mid" if seeds >= 25 else "low")
@@ -194,6 +195,14 @@ for torrent in sorted_torrents:
         card_cls += " is-llm"
 
     tags_html = '<span class="tag llm-tag">Choisi par l\'IA</span>' if is_llm else ""
+
+    # La dédup a replié les copies du même release trouvées sur d'autres
+    # trackers : on garde la trace plutôt que d'afficher N fois la même ligne.
+    dup_html = (
+        f'<span class="chip">aussi sur {duplicates - 1} autre'
+        f'{"s" if duplicates > 2 else ""} tracker{"s" if duplicates > 2 else ""}</span>'
+        if duplicates > 1 else ""
+    )
 
     st.markdown(
         f'<div class="{card_cls}">'
@@ -214,6 +223,7 @@ for torrent in sorted_torrents:
         f'      <span class="cdot"></span>'
         f'      {seeds} seeds'
         f'    </span>'
+        f'    {dup_html}'
         f'  </div>'
         f'</div>',
         unsafe_allow_html=True,

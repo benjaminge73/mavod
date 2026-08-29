@@ -119,6 +119,8 @@ def _v2_to_ui_dict(result: dict) -> dict:
             "dl":      c.get("path") or None,
             "magnet":  c.get("magnet") or None,
             "url":     c.get("torrent_url") or None,
+            # Copies de la même release écartées par la dédup cross-tracker
+            "duplicates": int(c.get("duplicate_count", 1) or 1),
             "llm":     bool(best_title and c.get("title") == best_title),
         })
 

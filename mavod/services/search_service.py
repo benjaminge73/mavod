@@ -19,6 +19,7 @@ from mavod.config import Settings
 from mavod.domain import Intent, Torrent
 from mavod.exceptions import ProwlarrError
 from mavod.logging_setup import get_logger
+from mavod.services.dedup import dedup_torrents
 
 
 log = get_logger(__name__)
@@ -55,19 +56,16 @@ class SearchService:
         else:
             prow = self._safe_prowlarr_series(intent)
 
-        # Déduplication par infohash quand disponible.
+        # Déduplication cross-tracker : infohash, sinon nom de release
+        # normalisé + taille (cf. mavod.services.dedup).
         pool: List[Torrent] = []
         sources_used: List[str] = []
-        seen_hashes: set[str] = set()
+        duplicates_removed = 0
 
         if prow:
             sources_used.append("prowlarr")
-            for t in prow:
-                if t.infohash and t.infohash in seen_hashes:
-                    continue
-                if t.infohash:
-                    seen_hashes.add(t.infohash)
-                pool.append(t)
+            pool = dedup_torrents(prow)
+            duplicates_removed = len(prow) - len(pool)
 
         log.info(
             "search.done",
@@ -79,6 +77,7 @@ class SearchService:
                 "episode": intent.episode,
                 "imdb_id": intent.imdb_id,
                 "raw_count": len(pool),
+                "duplicates_removed": duplicates_removed,
                 "sources": ",".join(sources_used) or "none",
             },
         )
