@@ -15,7 +15,7 @@ python-telegram-bot[job-queue]==22.8
 # Torrent parsing + indexer XML responses
 bencodepy==0.9.5
 beautifulsoup4==4.15.0
-lxml==6.1.2
+lxml==6.1.3
 
 # Misc
 python-dotenv==1.2.3
