@@ -41,6 +41,10 @@ class WorkflowResult:
     best_choice: Optional[Mapping[str, object]] = None
     llm_reasoning: Optional[str] = None
     llm_response: Optional[str] = None
+    # Non-None quand le `best_choice` vient du score local et non du LLM
+    # (réponse LLM vide / non parsable). Champ additif : les lecteurs v2
+    # existants l'ignorent.
+    ranking_fallback: Optional[str] = None
     qb_submit: Optional[QbSubmitResult] = None
     error: Optional[str] = None
     created_at: float = 0.0

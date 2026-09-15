@@ -79,7 +79,16 @@ class RankingDecision:
     reasoning: Optional[str] = None
     raw_response: Optional[str] = None
     usage: Mapping[str, int] = field(default_factory=dict)
+    # Renseigné quand le `best` ne vient PAS du LLM mais du score local
+    # (réponse LLM vide, tronquée ou non parsable) : "llm_empty",
+    # "llm_unparsable", "llm_error". None = choix réellement fait par le LLM.
+    fallback_reason: Optional[str] = None
 
     @property
     def has_choice(self) -> bool:
         return self.best is not None
+
+    @property
+    def is_fallback(self) -> bool:
+        """True si le `best` provient du score local et non du LLM."""
+        return self.fallback_reason is not None

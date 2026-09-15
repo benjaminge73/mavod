@@ -178,3 +178,87 @@ class TestLLMAdapter:
         """Le context manager ferme bien le client."""
         with LLMAdapter(settings) as adapter:
             assert adapter.model == settings.llm_model
+
+
+# ─── Réponses dégradées des backends reasoner ────────────────────────────────
+
+class TestReasonerResponses:
+    """Formes de réponse rencontrées avec un backend reasoner (DeepSeek & co.)."""
+
+    @respx.mock
+    def test_no_tool_calls_with_null_content_raises_llm_malformed(self, settings):
+        """`content: null` + pas de tool_calls → LLMMalformed (et non TypeError).
+
+        Régression : le formatage du message d'erreur tronquait `content` sans
+        le normaliser → TypeError, qui échappait à toute la hiérarchie
+        LLMError et remontait en « erreur inattendue » côté bot.
+        """
+        respx.post("https://api.deepseek.com/v1/chat/completions").mock(
+            return_value=httpx.Response(
+                200,
+                json={"choices": [{
+                    "finish_reason": "length",
+                    "message": {"role": "assistant", "content": None,
+                                "reasoning_content": "je réfléchis…"},
+                }]},
+            )
+        )
+        adapter = LLMAdapter(settings)
+        with pytest.raises(LLMMalformed) as exc:
+            adapter.chat_with_tools(messages=[{"role": "user", "content": "x"}], tools=[])
+        assert "length" in str(exc.value)  # finish_reason remonté pour le diagnostic
+
+    @respx.mock
+    def test_chat_with_usage_null_content_keeps_reasoning(self, settings):
+        """`content: null` mais raisonnement présent → contenu vide + reasoning."""
+        respx.post("https://api.deepseek.com/v1/chat/completions").mock(
+            return_value=httpx.Response(
+                200,
+                json={"choices": [{
+                    "finish_reason": "length",
+                    "message": {"content": None, "reasoning_content": "**Best choice:** Torrent 1"},
+                }]},
+            )
+        )
+        adapter = LLMAdapter(settings)
+        content, reasoning, _usage = adapter.chat_with_usage(system="s", user="u")
+        assert content == ""
+        assert reasoning == "**Best choice:** Torrent 1"
+
+    @respx.mock
+    def test_chat_with_usage_totally_empty_raises(self, settings):
+        """Ni content ni reasoning → LLMMalformed explicite (pas un vide silencieux)."""
+        respx.post("https://api.deepseek.com/v1/chat/completions").mock(
+            return_value=httpx.Response(
+                200,
+                json={"choices": [{"finish_reason": "length", "message": {"content": None}}]},
+            )
+        )
+        adapter = LLMAdapter(settings)
+        with pytest.raises(LLMMalformed):
+            adapter.chat_with_usage(system="s", user="u")
+
+    @respx.mock
+    def test_chat_accepts_content_blocks(self, settings):
+        """Certains providers renvoient `content` en liste de blocs texte."""
+        respx.post("https://api.deepseek.com/v1/chat/completions").mock(
+            return_value=httpx.Response(
+                200,
+                json={"choices": [{"message": {"content": [
+                    {"type": "text", "text": "**Best choice:** "},
+                    {"type": "text", "text": "Torrent 2"},
+                ]}}]},
+            )
+        )
+        adapter = LLMAdapter(settings)
+        assert adapter.chat(system="s", user="u") == "**Best choice:** Torrent 2"
+
+    @respx.mock
+    def test_malformed_payload_raises_llm_malformed(self, settings):
+        """Payload sans `choices` exploitable → LLMMalformed."""
+        respx.post("https://api.deepseek.com/v1/chat/completions").mock(
+            return_value=httpx.Response(200, json={"choices": []})
+        )
+        adapter = LLMAdapter(settings)
+        with pytest.raises(LLMMalformed):
+            adapter.chat(system="s", user="u")

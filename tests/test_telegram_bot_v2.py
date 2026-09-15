@@ -202,3 +202,68 @@ def test_main_module_imports():
     """`python -m mavod` doit pouvoir importer le bot V2 sans erreur."""
     import mavod.__main__  # noqa: F401
     from mavod.telegram.bot import run  # noqa: F401
+
+
+# ─── Message de résultat (honnêteté du retour utilisateur) ───────────────────
+
+
+def _result(**overrides) -> WorkflowResult:
+    base = dict(
+        schema_version=SCHEMA_VERSION,
+        search_id="20260101_120000_Dune",
+        title="Dune",
+        media_type="movie",
+        year=2021,
+    )
+    base.update(overrides)
+    return WorkflowResult(**base)
+
+
+def _send_result(result: WorkflowResult) -> str:
+    """Joue `_send_result` sur un update mocké et renvoie le texte envoyé."""
+    async def run() -> str:
+        from mavod.telegram.bot import _send_result as send
+        update = MagicMock()
+        update.message.reply_text = AsyncMock()
+        ctx = MagicMock()
+        ctx.workflow_service.ui_url.return_value = "http://ui/?search_id=x"
+        ctx.download_watcher.watch = AsyncMock()
+        await send(update, MagicMock(), ctx, result, Intent(title="Dune", type="movie", year=2021))
+        return update.message.reply_text.call_args.args[0]
+
+    return asyncio.run(run())
+
+
+def test_send_result_without_best_choice_does_not_claim_download():
+    """Sans gagnant, le bot ne doit pas annoncer un téléchargement en cours."""
+    text = _send_result(_result(best_choice=None))
+    assert "En cours de téléchargement" not in text
+    assert "Aucun torrent retenu" in text
+
+
+def test_send_result_error_mentions_the_cause():
+    """Une erreur de ranking est remontée telle quelle à l'utilisateur."""
+    text = _send_result(_result(error="ranking: aucun torrent retenu à partir des candidats"))
+    assert "ranking" in text
+    assert "En cours de téléchargement" not in text
+
+
+def test_send_result_flags_local_fallback():
+    """Quand le choix vient du score local, le message le dit."""
+    text = _send_result(_result(
+        best_choice={"title": "Dune.2021.1080p.BluRay"},
+        ranking_fallback="llm_empty",
+        qb_submit=QbSubmitResult(infohash="a" * 40, name="Dune", submitted_at=0.0),
+    ))
+    assert "En cours de téléchargement" in text
+    assert "score local" in text
+
+
+def test_send_result_nominal_has_no_fallback_note():
+    """Choix fait par le LLM : aucune mention de fallback."""
+    text = _send_result(_result(
+        best_choice={"title": "Dune.2021.1080p.BluRay"},
+        qb_submit=QbSubmitResult(infohash="a" * 40, name="Dune", submitted_at=0.0),
+    ))
+    assert "En cours de téléchargement" in text
+    assert "score local" not in text

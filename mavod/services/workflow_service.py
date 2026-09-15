@@ -7,6 +7,7 @@ isolément.
 
 from __future__ import annotations
 
+import logging
 import re
 import time
 from dataclasses import dataclass, asdict
@@ -162,25 +163,37 @@ class WorkflowService:
 
             # ── qBittorrent submit ───────────────────────────────────────
             submit: Optional[QbSubmitResult] = None
-            if decision.has_choice and not skip_qb:
+            error: Optional[str] = None
+            if not decision.has_choice:
+                # Ne jamais annoncer un téléchargement qui n'a pas eu lieu.
+                error = "ranking: aucun torrent retenu à partir des candidats"
+            elif not skip_qb:
                 submit = self._submit_to_qb(decision.best, search_id)
+                if submit is None:
+                    error = (
+                        "qBittorrent: aucune source exploitable "
+                        f"(ni magnet ni .torrent) pour « {decision.best.title} »"
+                    )
 
             result = self._build_result(
                 intent, search_id,
                 raw_pool=raw_pool, candidates=candidates,
-                decision=decision, submit=submit,
+                decision=decision, submit=submit, error=error,
             )
 
             if persist:
                 self._persist_result(temp_dir, result)
 
-            log.info(
-                "workflow.success",
+            log.log(
+                logging.WARNING if error else logging.INFO,
+                "workflow.failed" if error else "workflow.success",
                 extra={
                     "search_id": search_id,
                     "candidates": len(candidates),
                     "best": decision.best.title if decision.best else None,
+                    "ranking_fallback": decision.fallback_reason,
                     "submitted": submit is not None,
+                    "error": error,
                 },
             )
             return result
@@ -294,6 +307,7 @@ class WorkflowService:
             best_choice=(_torrent_to_ui_dict(decision.best) if decision and decision.best else None),
             llm_reasoning=(decision.reasoning if decision else None),
             llm_response=(decision.raw_response if decision else None),
+            ranking_fallback=(decision.fallback_reason if decision else None),
             qb_submit=submit,
             error=error,
             created_at=time.time(),

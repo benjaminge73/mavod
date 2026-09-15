@@ -260,6 +260,13 @@ async def _parse_intent(
                 await update.message.reply_text(f"❓ Je n'ai pas compris : {e}")
                 session.reset(system_prompt=ctx.system_prompt)
                 return None
+            except MavodError as e:
+                # Timeout / quota / provider KO : ce n'est pas l'utilisateur
+                # qui s'est mal exprimé, on le dit comme tel.
+                log.warning("bot.intent_llm_down", extra={"text": text, "err": str(e)})
+                await update.message.reply_text(f"💥 LLM injoignable : {e}")
+                session.reset(system_prompt=ctx.system_prompt)
+                return None
 
             session.history.append(turn.assistant_msg)
             session.truncate_history(ctx.settings.max_history_messages)
@@ -307,20 +314,46 @@ def _format_intent_desc(intent: Intent) -> str:
 
 async def _send_result(update, context, ctx: BotContext, result, intent: Intent) -> None:
     """Envoie le résultat workflow à l'utilisateur + démarre le watcher si OK."""
+    ui_url = ctx.workflow_service.ui_url(result.search_id)
+
     if result.error:
         if "Aucun candidat" in result.error:
             await update.message.reply_text(f"😕 Aucun résultat pour {_format_intent_desc(intent)}")
         else:
-            await update.message.reply_text(f"⚠️ {result.error}")
+            # Le lien UI reste utile en cas d'échec : les candidats filtrés y
+            # sont consultables et téléchargeables à la main.
+            await update.message.reply_text(
+                f"⚠️ {html.escape(result.error)}\n"
+                "🔗 Candidats trouvés : "
+                f'<a href="{html.escape(ui_url)}">ma-vod</a>',
+                parse_mode="HTML",
+                disable_web_page_preview=True,
+            )
         return
 
-    name = (result.best_choice or {}).get("title") or "?"
-    ui_url = ctx.workflow_service.ui_url(result.search_id)
+    name = (result.best_choice or {}).get("title")
+    if not name:
+        # Filet : un résultat sans erreur ET sans choix ne doit jamais être
+        # annoncé comme un téléchargement en cours.
+        log.warning("bot.result_without_choice", extra={"search_id": result.search_id})
+        await update.message.reply_text(
+            f"⚠️ Aucun torrent retenu pour {_format_intent_desc(intent)}.\n"
+            "🔗 Candidats trouvés : "
+            f'<a href="{html.escape(ui_url)}">ma-vod</a>',
+            parse_mode="HTML",
+            disable_web_page_preview=True,
+        )
+        return
+
     # parse_mode HTML : le search_id contient des underscores qui cassent une
     # inline link en Markdown legacy → HTML reste robuste (URL non échappée).
     msg = (
         "✅ En cours de téléchargement\n"
         f"🎯 Torrent choisi : {html.escape(name)}\n"
+    )
+    if result.ranking_fallback:
+        msg += "ℹ️ Choix fait sur le score local (pas de verdict exploitable du LLM)\n"
+    msg += (
         "🔗 Pour consulter les torrents disponibles : "
         f'<a href="{html.escape(ui_url)}">ma-vod</a>'
     )
