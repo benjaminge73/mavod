@@ -20,7 +20,7 @@ from mavod.adapters.llm import LLMAdapter
 from mavod.adapters.llm.prompts import load_ranker_prompt, prompt_hash
 from mavod.config import Settings
 from mavod.domain import Intent, RankingDecision, Torrent, TorrentFile
-from mavod.exceptions import LLMError, RankingError
+from mavod.exceptions import LLMError, LLMMalformed, RankingError
 from mavod.logging_setup import get_logger
 
 
@@ -44,9 +44,20 @@ class RankingStrategy(Protocol):
 class LLMRankingStrategy:
     """Stratégie de ranking via API LLM + prompt v2 externalisé."""
 
-    _RANKING_RE = re.compile(
-        r"\*\*Best choice:\*\*\s*Torrent\s*(\d+)", re.IGNORECASE
+    # Le prompt demande `**Best choice:** Torrent N`, mais aucun modèle ne le
+    # rend verbatim à 100 % : gras absent ou placé autrement (`**Best choice**:`),
+    # numéro nu (`Best choice: 2`), casse variable. On normalise le markdown
+    # (cf. `_strip_markdown`) puis on parse tolérant — un écart de formatage ne
+    # doit jamais coûter un téléchargement.
+    _BEST_RE = re.compile(
+        r"best\s*choice\s*[:\-–—]?\s*(?:torrent|candidate|option|n[o°]\.?|#)?\s*(\d+)",
+        re.IGNORECASE,
     )
+    _FINAL_RANKING_RE = re.compile(
+        r"final\s*ranking\s*[:\-–—]?\s*(.+)", re.IGNORECASE
+    )
+    _TORRENT_IDX_RE = re.compile(r"torrent\s*(\d+)", re.IGNORECASE)
+    _BARE_IDX_RE = re.compile(r"\d+")
 
     def __init__(self, settings: Settings, *, adapter: Optional[LLMAdapter] = None):
         self._settings = settings
@@ -67,6 +78,8 @@ class LLMRankingStrategy:
             return RankingDecision(ranked=(), best=None)
 
         user_msg = self._format_candidates(intent, candidates)
+        content, reasoning, usage = "", None, {}
+        fallback_reason: Optional[str] = None
         try:
             content, reasoning, usage = self._adapter.chat_with_usage(
                 system=self._system_prompt,
@@ -74,17 +87,54 @@ class LLMRankingStrategy:
                 max_tokens=self._settings.llm_ranker_max_tokens,
                 temperature=0.1,
             )
+        except LLMMalformed as e:
+            # Réponse vide / illisible : le LLM n'arbitre pas, mais les
+            # candidats sont déjà triés par score local → on dégrade au lieu
+            # d'annuler le téléchargement.
+            log.warning("ranker.llm_unusable", extra={"err": str(e)})
+            fallback_reason = "llm_empty"
         except LLMError as e:
+            # Réseau / quota / HTTP : là, quelque chose ne va pas globalement,
+            # on remonte l'erreur au workflow.
             raise RankingError(f"LLM KO: {e}") from e
 
+        # Un reasoner tronqué peut laisser son verdict dans `reasoning_content`
+        # alors que `content` est vide : on cherche dans les deux.
         best = self._parse_best_choice(content, candidates)
-        ranked = self._parse_ranking(content, candidates) or list(candidates)
+        if best is None and reasoning:
+            best = self._parse_best_choice(reasoning, candidates)
+            if best is not None:
+                fallback_reason = None
+                log.info("ranker.best_from_reasoning")
+
+        ranked = (
+            self._parse_ranking(content, candidates)
+            or self._parse_ranking(reasoning or "", candidates)
+            or list(candidates)
+        )
+
+        if best is None:
+            # Dernier filet : `candidates` est trié par score local décroissant
+            # (cf. torrent_filter.filter_top_torrents) → le premier de `ranked`
+            # reste un choix défendable, et l'utilisateur obtient son film.
+            best = ranked[0]
+            fallback_reason = fallback_reason or "llm_unparsable"
+            log.warning(
+                "ranker.fallback_local",
+                extra={
+                    "reason": fallback_reason,
+                    "candidates": len(candidates),
+                    "picked": best.title,
+                    "raw_head": (content or "")[:200],
+                },
+            )
 
         log.info(
             "ranker.done",
             extra={
                 "candidates": len(candidates),
-                "best_idx": (ranked.index(best) + 1) if best else None,
+                "best_idx": (ranked.index(best) + 1) if best in ranked else None,
+                "fallback": fallback_reason,
                 "cache_hit_tokens": usage.get("prompt_cache_hit_tokens", 0),
                 "prompt_tokens": usage.get("prompt_tokens", 0),
             },
@@ -95,6 +145,7 @@ class LLMRankingStrategy:
             reasoning=reasoning,
             raw_response=content,
             usage=usage,
+            fallback_reason=fallback_reason,
         )
 
     # ─── Internal ────────────────────────────────────────────────────────
@@ -129,17 +180,19 @@ class LLMRankingStrategy:
         response: str,
         candidates: Sequence[Torrent],
     ) -> Optional[Torrent]:
-        """Extrait l'index `Best choice: Torrent N` du texte LLM. None si absent/invalide."""
-        m = self._RANKING_RE.search(response or "")
-        if not m:
-            return None
-        try:
+        """Extrait l'index `Best choice: Torrent N` du texte LLM. None si absent/invalide.
+
+        Tolère les variantes de formatage (gras, numéro nu, casse) et retient la
+        DERNIÈRE occurrence valide : un modèle qui se reprend écrit son verdict
+        définitif en fin de réponse.
+        """
+        text = _strip_markdown(response)
+        picked: Optional[Torrent] = None
+        for m in self._BEST_RE.finditer(text):
             idx = int(m.group(1))
-        except ValueError:
-            return None
-        if 1 <= idx <= len(candidates):
-            return candidates[idx - 1]
-        return None
+            if 1 <= idx <= len(candidates):
+                picked = candidates[idx - 1]
+        return picked
 
     def _parse_ranking(
         self,
@@ -147,17 +200,18 @@ class LLMRankingStrategy:
         candidates: Sequence[Torrent],
     ) -> List[Torrent]:
         """Extrait la liste ordonnée `Final ranking: Torrent X, Torrent Y, …` (déduplique)."""
-        m = re.search(r"\*\*Final ranking:\*\*\s*(.+)", response or "")
+        m = self._FINAL_RANKING_RE.search(_strip_markdown(response))
         if not m:
             return []
-        indices = re.findall(r"Torrent\s*(\d+)", m.group(1))
+        line = m.group(1)
+        # `Torrent N` d'abord ; à défaut, des numéros nus (`2, 1, 3`). L'ordre
+        # importe : chercher les numéros nus en premier ferait matcher « 1080 »
+        # dans un titre recopié par le modèle.
+        indices = self._TORRENT_IDX_RE.findall(line) or self._BARE_IDX_RE.findall(line)
         out: List[Torrent] = []
         seen: set = set()
         for raw in indices:
-            try:
-                i = int(raw)
-            except ValueError:
-                continue
+            i = int(raw)
             if 1 <= i <= len(candidates) and i not in seen:
                 seen.add(i)
                 out.append(candidates[i - 1])
@@ -217,6 +271,21 @@ class RankingService:
         """Étape 3 : ranking LLM. Enrichit avec breakdown fichiers si bytes dispo."""
         enriched = [_enrich_files_from_bytes(t) for t in candidates]
         return self._llm.rank(intent, enriched)
+
+
+# ─── Parsing helpers ─────────────────────────────────────────────────────────
+
+
+_MARKDOWN_NOISE_RE = re.compile(r"[*_`]+")
+
+
+def _strip_markdown(text: Optional[str]) -> str:
+    """Retire l'emphase markdown (`**`, `_`, backticks) avant parsing.
+
+    Neutralise d'un coup toutes les positions possibles du gras autour du
+    libellé (`**Best choice:**`, `**Best choice**:`, `*Best choice*: `…).
+    """
+    return _MARKDOWN_NOISE_RE.sub("", text or "")
 
 
 # ─── Conversion helpers ──────────────────────────────────────────────────────

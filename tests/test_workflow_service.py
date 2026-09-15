@@ -135,6 +135,61 @@ class TestWorkflowService:
         assert result.best_choice["title"] == "Best Choice"
         assert result.error is None
 
+    def test_no_best_choice_is_reported_as_error(self, settings):
+        """Un ranking sans gagnant ne doit JAMAIS passer pour un succès."""
+        torrent = _t("X")
+        search = MagicMock()
+        search.search.return_value = SearchOutcome(raw_pool=(torrent,), sources_used=("prowlarr",))
+        ranking = MagicMock()
+        ranking.filter_and_score.return_value = [torrent]
+        ranking.rank.return_value = RankingDecision(ranked=(torrent,), best=None)
+        qb = MagicMock()
+
+        svc = WorkflowService(settings, search=search, ranking=ranking, qb=qb)
+        result = svc.run(Intent(title="X", type="movie"))
+
+        assert result.best_choice is None
+        assert "ranking" in (result.error or "")
+        qb.add.assert_not_called()
+
+    def test_unsubmittable_torrent_is_reported_as_error(self, settings):
+        """Gagnant sans magnet ni .torrent : erreur explicite, pas un faux succès."""
+        torrent = Torrent(title="Sans source", indexer="P:T",
+                          size_bytes=1024, seeders=1, infohash="a" * 40)
+        search = MagicMock()
+        search.search.return_value = SearchOutcome(raw_pool=(torrent,), sources_used=("prowlarr",))
+        ranking = MagicMock()
+        ranking.filter_and_score.return_value = [torrent]
+        ranking.rank.return_value = RankingDecision(ranked=(torrent,), best=torrent)
+        qb = MagicMock()
+
+        svc = WorkflowService(settings, search=search, ranking=ranking, qb=qb)
+        result = svc.run(Intent(title="X", type="movie"))
+
+        assert result.qb_submit is None
+        assert "qBittorrent" in (result.error or "")
+        qb.add.assert_not_called()
+
+    def test_ranking_fallback_is_propagated(self, settings):
+        """Le fallback score local est tracé dans le résultat (UI + message bot)."""
+        torrent = _t("Fallback")
+        search = MagicMock()
+        search.search.return_value = SearchOutcome(raw_pool=(torrent,), sources_used=("prowlarr",))
+        ranking = MagicMock()
+        ranking.filter_and_score.return_value = [torrent]
+        ranking.rank.return_value = RankingDecision(
+            ranked=(torrent,), best=torrent, fallback_reason="llm_empty",
+        )
+        qb = MagicMock()
+        qb.add.return_value = "abc123"
+
+        svc = WorkflowService(settings, search=search, ranking=ranking, qb=qb)
+        result = svc.run(Intent(title="X", type="movie"))
+
+        assert result.error is None
+        assert result.ranking_fallback == "llm_empty"
+        assert json.loads(result.to_json())["ranking_fallback"] == "llm_empty"
+
     def test_skip_qb(self, settings):
         """Le flag skip_qb saute l'étape de soumission."""
         torrent = _t("X")

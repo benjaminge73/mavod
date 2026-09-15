@@ -119,8 +119,8 @@ class TestLLMRankingStrategy:
         assert "specifically" not in user_msg
 
     @respx.mock
-    def test_unparseable_response_returns_no_best(self, settings):
-        """Une réponse non parsable ne retourne pas de meilleur choix."""
+    def test_unparseable_response_falls_back_to_local_top(self, settings):
+        """Réponse non parsable → fallback sur le meilleur score local, pas d'abandon."""
         respx.post("https://api.deepseek.com/v1/chat/completions").mock(
             return_value=httpx.Response(
                 200,
@@ -128,8 +128,11 @@ class TestLLMRankingStrategy:
             )
         )
         strat = LLMRankingStrategy(settings)
-        decision = strat.rank(Intent(title="X", type="movie"), [_t(1)])
-        assert decision.best is None
+        candidates = [_t(1), _t(2)]
+        decision = strat.rank(Intent(title="X", type="movie"), candidates)
+        assert decision.best == candidates[0]
+        assert decision.fallback_reason == "llm_unparsable"
+        assert decision.is_fallback
 
     @respx.mock
     def test_llm_error_wrapped(self, settings):
@@ -142,42 +145,126 @@ class TestLLMRankingStrategy:
             strat.rank(Intent(title="X", type="movie"), [_t(1)])
 
     @respx.mock
-    def test_best_choice_out_of_range_returns_none(self, settings):
-        """Si LLM renvoie Torrent 99 mais on n'a que 3 candidats → pas de best."""
+    def test_best_choice_out_of_range_falls_back(self, settings):
+        """Si LLM renvoie Torrent 99 mais on n'a que 3 candidats → fallback local."""
         respx.post("https://api.deepseek.com/v1/chat/completions").mock(
-            return_value=_ranker_response(best=99)
+            return_value=_ranker_response(best=99, ranking="Torrent 3, Torrent 1")
         )
         strat = LLMRankingStrategy(settings)
-        decision = strat.rank(
-            Intent(title="X", type="movie"),
-            [_t(1), _t(2), _t(3)],
-        )
-        assert decision.best is None
+        candidates = [_t(1), _t(2), _t(3)]
+        decision = strat.rank(Intent(title="X", type="movie"), candidates)
+        # `Final ranking` reste exploitable → son premier élément fait foi.
+        assert decision.best == candidates[2]
+        assert decision.fallback_reason == "llm_unparsable"
 
     @respx.mock
-    def test_best_choice_zero_returns_none(self, settings):
-        """Index 0 invalide (1-indexé attendu)."""
+    def test_best_choice_zero_falls_back(self, settings):
+        """Index 0 invalide (1-indexé attendu) → fallback sur le top local."""
         respx.post("https://api.deepseek.com/v1/chat/completions").mock(
-            return_value=_ranker_response(best=0)
+            return_value=_ranker_response(best=0, ranking="rien d'exploitable")
         )
         strat = LLMRankingStrategy(settings)
-        decision = strat.rank(Intent(title="X", type="movie"), [_t(1), _t(2)])
-        assert decision.best is None
+        candidates = [_t(1), _t(2)]
+        decision = strat.rank(Intent(title="X", type="movie"), candidates)
+        assert decision.best == candidates[0]
+        assert decision.fallback_reason == "llm_unparsable"
 
     @respx.mock
-    def test_empty_content_returns_no_best(self, settings):
-        """max_tokens dépassé → content vide → pas de best."""
+    def test_empty_content_falls_back_to_local_top(self, settings):
+        """max_tokens dépassé → content vide → fallback sur le meilleur score local."""
         respx.post("https://api.deepseek.com/v1/chat/completions").mock(
             return_value=httpx.Response(
-                200, json={"choices": [{"message": {"content": ""}}]}
+                200,
+                json={"choices": [{"finish_reason": "length",
+                                   "message": {"content": ""}}]},
             )
         )
         strat = LLMRankingStrategy(settings)
         candidates = [_t(1), _t(2)]
         decision = strat.rank(Intent(title="X", type="movie"), candidates)
-        assert decision.best is None
+        assert decision.best == candidates[0]
+        assert decision.fallback_reason == "llm_empty"
         # Fallback : si parsing échoue, ranked = candidats dans l'ordre d'entrée
         assert decision.ranked == tuple(candidates)
+
+    # ─── Robustesse de formatage (cf. incident « aucun retour exploitable ») ──
+
+    @pytest.mark.parametrize(
+        "content",
+        [
+            "**Final ranking:** Torrent 2, Torrent 1\n**Best choice:** Torrent 2",
+            "**Final ranking**: Torrent 2, Torrent 1\n**Best choice**: Torrent 2",
+            "Final ranking: Torrent 2, Torrent 1\nBest choice: Torrent 2",
+            "**Final ranking:** 2, 1\n**Best choice:** 2",
+            "final ranking: torrent 2, torrent 1\nbest choice: #2",
+            "**Best choice:** Torrent 2 — meilleure source et audio EAC3.",
+        ],
+        ids=["bold_canonical", "bold_outside_colon", "no_bold",
+             "bare_numbers", "lowercase_hash", "trailing_prose"],
+    )
+    @respx.mock
+    def test_best_choice_format_variants(self, settings, content):
+        """Le verdict est lu quelle que soit la variante de formatage du modèle."""
+        respx.post("https://api.deepseek.com/v1/chat/completions").mock(
+            return_value=httpx.Response(
+                200, json={"choices": [{"message": {"content": content}}]}
+            )
+        )
+        strat = LLMRankingStrategy(settings)
+        candidates = [_t(1), _t(2), _t(3)]
+        decision = strat.rank(Intent(title="X", type="movie"), candidates)
+        assert decision.best == candidates[1]
+        assert not decision.is_fallback
+
+    @respx.mock
+    def test_best_choice_read_from_reasoning_content(self, settings):
+        """Reasoner tronqué : le verdict est dans `reasoning_content`, on le lit."""
+        respx.post("https://api.deepseek.com/v1/chat/completions").mock(
+            return_value=httpx.Response(
+                200,
+                json={"choices": [{
+                    "finish_reason": "length",
+                    "message": {
+                        "content": None,
+                        "reasoning_content": "Le 3 est trop gros.\n**Best choice:** Torrent 2",
+                    },
+                }]},
+            )
+        )
+        strat = LLMRankingStrategy(settings)
+        candidates = [_t(1), _t(2), _t(3)]
+        decision = strat.rank(Intent(title="X", type="movie"), candidates)
+        assert decision.best == candidates[1]
+        assert decision.fallback_reason is None
+
+    @respx.mock
+    def test_last_best_choice_wins(self, settings):
+        """Un modèle qui se reprend : la dernière occurrence valide fait foi."""
+        text = "**Best choice:** Torrent 1\nCorrection : **Best choice:** Torrent 3"
+        respx.post("https://api.deepseek.com/v1/chat/completions").mock(
+            return_value=httpx.Response(
+                200, json={"choices": [{"message": {"content": text}}]}
+            )
+        )
+        strat = LLMRankingStrategy(settings)
+        candidates = [_t(1), _t(2), _t(3)]
+        decision = strat.rank(Intent(title="X", type="movie"), candidates)
+        assert decision.best == candidates[2]
+
+    @respx.mock
+    def test_ranking_ignores_numbers_inside_titles(self, settings):
+        """`Torrent N` prime sur les nombres nus (1080p ne doit pas être un index)."""
+        text = ("**Final ranking:** Torrent 2 (1080p), Torrent 1 (720p)\n"
+                "**Best choice:** Torrent 2")
+        respx.post("https://api.deepseek.com/v1/chat/completions").mock(
+            return_value=httpx.Response(
+                200, json={"choices": [{"message": {"content": text}}]}
+            )
+        )
+        strat = LLMRankingStrategy(settings)
+        candidates = [_t(1), _t(2)]
+        decision = strat.rank(Intent(title="X", type="movie"), candidates)
+        assert decision.ranked == (candidates[1], candidates[0])
 
     @respx.mock
     def test_ranking_dedupes_duplicates(self, settings):

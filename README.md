@@ -223,6 +223,14 @@ seeders, file size) and the top shortlist is handed to the LLM ranker, which
 reads the per-file breakdown extracted directly from the `.torrent` metadata
 (bencode parsing — no tracker round-trip needed for most releases).
 
+The LLM is an arbiter, not a single point of failure. Its verdict is parsed
+leniently (markdown emphasis, bare indices and case variations are all
+accepted, and a reasoning-model verdict left in `reasoning_content` is read
+too). If nothing usable comes back — empty or truncated response, unparsable
+output — the top locally-scored candidate wins by default, the decision is
+tagged `ranking_fallback` in `result.json`, and the Telegram reply says the
+pick came from the local score. A search never dies on a formatting quirk.
+
 ---
 
 ## Tests

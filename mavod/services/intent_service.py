@@ -8,7 +8,7 @@ Remplace `mavod/intent_parser.py` à terme. Consomme `LLMAdapter` +
 from __future__ import annotations
 
 import json
-from typing import Any, Dict, List, Sequence
+from typing import Any, Dict, List, Optional, Sequence
 
 from mavod.adapters.llm import LLMAdapter
 from mavod.adapters.llm.prompts import load_intent_prompt, prompt_hash
@@ -16,6 +16,7 @@ from mavod.config import Settings
 from mavod.domain import ClarificationRequest, Intent, IntentResult
 from mavod.exceptions import (
     LLMError,
+    LLMMalformed,
     IntentParseError,
     IntentValidationError,
 )
@@ -104,16 +105,35 @@ class IntentService:
         else:
             full_history = history
 
-        try:
-            response = self._adapter.chat_with_tools(
-                messages=full_history,
-                tools=list(INTENT_TOOLS),
-                tool_choice="auto",
-                temperature=0.0,
-                max_tokens=self._settings.llm_intent_max_tokens,
-            )
-        except LLMError as e:
-            raise IntentParseError(f"LLM error: {e}") from e
+        # Un backend reasoner consomme `max_tokens` en raisonnement avant même
+        # d'émettre le tool_call : une réponse tronquée revient sans
+        # `tool_calls` (LLMMalformed). On retente alors UNE fois avec le double
+        # de budget plutôt que de rendre « je n'ai pas compris » à
+        # l'utilisateur pour un simple manque de tokens.
+        budget = self._settings.llm_intent_max_tokens
+        response: Optional[Dict[str, Any]] = None
+        last_malformed: Optional[LLMError] = None
+        for attempt, max_tokens in enumerate((budget, budget * 2), start=1):
+            try:
+                response = self._adapter.chat_with_tools(
+                    messages=full_history,
+                    tools=list(INTENT_TOOLS),
+                    tool_choice="auto",
+                    temperature=0.0,
+                    max_tokens=max_tokens,
+                )
+                break
+            except LLMMalformed as e:
+                last_malformed = e
+                log.warning(
+                    "intent.malformed_retry",
+                    extra={"attempt": attempt, "max_tokens": max_tokens, "err": str(e)},
+                )
+            except LLMError as e:
+                raise IntentParseError(f"LLM error: {e}") from e
+
+        if response is None:
+            raise IntentParseError(f"LLM error: {last_malformed}") from last_malformed
 
         tool = response["tool_name"]
         args = response["arguments"]

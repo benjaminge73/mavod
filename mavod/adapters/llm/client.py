@@ -93,15 +93,34 @@ class LLMAdapter:
             body["response_format"] = {"type": "json_object"}
 
         payload = self._post(body)
+        choice, msg = self._first_choice(payload)
 
-        try:
-            msg = payload["choices"][0]["message"]
-            content = msg["content"]
-            reasoning = msg.get("reasoning_content")
-            usage = payload.get("usage") or {}
-            return content, reasoning, usage
-        except (KeyError, IndexError, ValueError, json.JSONDecodeError) as e:
-            raise LLMMalformed(f"Réponse invalide: {e}") from e
+        content = _as_text(msg.get("content"))
+        reasoning = _as_text(msg.get("reasoning_content")) or None
+        usage = payload.get("usage") or {}
+        finish_reason = choice.get("finish_reason")
+
+        if not content.strip():
+            # Cas typique d'un backend reasoner : tout le budget `max_tokens`
+            # part dans le raisonnement (`finish_reason="length"`) et `content`
+            # revient vide ou `null`. On le remonte explicitement au lieu de
+            # rendre un contenu vide que l'appelant interprétera comme « rien
+            # à choisir ».
+            log.warning(
+                "llm.empty_content",
+                extra={
+                    "model": self._settings.llm_model,
+                    "finish_reason": finish_reason,
+                    "has_reasoning": bool(reasoning),
+                    "completion_tokens": usage.get("completion_tokens"),
+                },
+            )
+            if not reasoning:
+                raise LLMMalformed(
+                    f"Réponse vide (finish_reason={finish_reason!r})"
+                )
+
+        return content, reasoning, usage
 
     def chat_with_tools(
         self,
@@ -129,16 +148,26 @@ class LLMAdapter:
         }
 
         payload = self._post(body)
-
-        try:
-            msg = payload["choices"][0]["message"]
-        except (KeyError, IndexError) as e:
-            raise LLMMalformed(f"Réponse sans message: {e}") from e
+        choice, msg = self._first_choice(payload)
+        finish_reason = choice.get("finish_reason")
 
         tool_calls = msg.get("tool_calls") or []
         if not tool_calls:
+            # `content` peut être `null` (reasoner tronqué par `max_tokens`) :
+            # on le normalise avant de le tronquer, sinon on lève un TypeError
+            # qui court-circuite toute la hiérarchie LLMError des appelants.
+            content = _as_text(msg.get("content"))
+            log.warning(
+                "llm.no_tool_calls",
+                extra={
+                    "model": self._settings.llm_model,
+                    "finish_reason": finish_reason,
+                    "has_content": bool(content.strip()),
+                },
+            )
             raise LLMMalformed(
-                f"Pas de tool_calls dans la réponse (content={msg.get('content','')[:200]!r})"
+                f"Pas de tool_calls dans la réponse "
+                f"(finish_reason={finish_reason!r}, content={content[:200]!r})"
             )
 
         call = tool_calls[0]
@@ -165,6 +194,18 @@ class LLMAdapter:
             "raw_response":  payload,
             "usage":         payload.get("usage") or {},
         }
+
+    @staticmethod
+    def _first_choice(payload: Dict[str, Any]) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+        """Extrait `(choice, message)` du premier choix. LLMMalformed si absent."""
+        try:
+            choice = payload["choices"][0]
+            msg = choice["message"]
+        except (KeyError, IndexError, TypeError) as e:
+            raise LLMMalformed(f"Réponse invalide: {e}") from e
+        if not isinstance(msg, dict):
+            raise LLMMalformed(f"Message de type inattendu: {type(msg).__name__}")
+        return choice, msg
 
     def close(self) -> None:
         """Ferme le httpx.Client interne (uniquement si on l'a créé nous-mêmes)."""
@@ -241,6 +282,26 @@ class LLMAdapter:
 
         # Inatteignable
         raise LLMError(f"Retries épuisés ({last_error})")
+
+
+def _as_text(value: Any) -> str:
+    """Normalise un champ texte d'une réponse OpenAI-compatible en `str`.
+
+    Absorbe les trois formes rencontrées en production : `null` (reasoner
+    tronqué), chaîne simple, et liste de blocs `{"type": "text", "text": …}`
+    servie par certains providers.
+    """
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value
+    if isinstance(value, list):
+        parts = [
+            p.get("text", "") if isinstance(p, dict) else str(p)
+            for p in value
+        ]
+        return "".join(parts)
+    return str(value)
 
 
 def _sleep(seconds: float) -> None:

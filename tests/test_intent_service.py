@@ -264,3 +264,56 @@ class TestMultiTurnFlow:
         assert len(captured_bodies[1]["messages"]) >= 4
         roles = [m["role"] for m in captured_bodies[1]["messages"]]
         assert "tool" in roles
+
+
+class TestTruncatedReasonerResponse:
+    """Un backend reasoner peut brûler `max_tokens` en raisonnement avant le tool_call."""
+
+    @respx.mock
+    def test_retries_once_with_double_budget(self, settings):
+        """Réponse tronquée sans tool_calls → un retry avec le double de budget."""
+        bodies = []
+
+        def _side_effect(request):
+            import json as _json
+            body = _json.loads(request.content)
+            bodies.append(body)
+            if len(bodies) == 1:
+                return httpx.Response(
+                    200,
+                    json={"choices": [{
+                        "finish_reason": "length",
+                        "message": {"role": "assistant", "content": None,
+                                    "reasoning_content": "l'utilisateur veut Inception…"},
+                    }]},
+                )
+            return _tool_response(
+                "submit_intent",
+                '{"title": "Inception", "type": "movie", "year": 2010}',
+            )
+
+        respx.post("https://api.deepseek.com/v1/chat/completions").mock(side_effect=_side_effect)
+        svc = IntentService(settings)
+        turn = svc.parse([{"role": "user", "content": "Télécharge le film Inception"}])
+
+        assert turn.is_intent
+        assert turn.intent.title == "Inception"
+        assert len(bodies) == 2
+        assert bodies[1]["max_tokens"] == 2 * bodies[0]["max_tokens"]
+
+    @respx.mock
+    def test_still_truncated_raises_intent_parse_error(self, settings):
+        """Deux réponses tronquées → IntentParseError explicite (pas de TypeError)."""
+        respx.post("https://api.deepseek.com/v1/chat/completions").mock(
+            return_value=httpx.Response(
+                200,
+                json={"choices": [{
+                    "finish_reason": "length",
+                    "message": {"role": "assistant", "content": None},
+                }]},
+            )
+        )
+        svc = IntentService(settings)
+        with pytest.raises(IntentParseError) as exc:
+            svc.parse([{"role": "user", "content": "Télécharge le film Inception"}])
+        assert "length" in str(exc.value)
